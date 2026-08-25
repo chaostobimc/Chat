@@ -584,8 +584,6 @@ class TicketButton(Button):
         self.button_data = button_data
     
     async def callback(self, interaction: Interaction):
-        await interaction.response.defer(ephemeral=True)
-        
         user_id = str(interaction.user.id)
         guild_id = str(interaction.guild.id)
         button_id = self.button_data['id']
@@ -594,22 +592,27 @@ class TicketButton(Button):
         current_tickets = self.db.count_user_tickets(user_id, guild_id, button_id)
         
         if current_tickets >= max_tickets:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 f"❌ Du hast bereits {max_tickets} offene Tickets für diese Kategorie.",
                 ephemeral=True
             )
             return
         
-        # Check if button uses custom modal
+        # Check if button uses custom modal (must send modal BEFORE defer)
         if self.button_data.get('use_modal') and self.button_data.get('modal_fields'):
             modal = CustomTicketModal(self.db, self.button_data)
             await interaction.response.send_modal(modal)
-        # Check if button uses simple question
-        elif self.button_data.get('require_question') and self.button_data.get('question_title'):
+            return
+        
+        # Check if button uses simple question (must send modal BEFORE defer)
+        if self.button_data.get('require_question') and self.button_data.get('question_title'):
             modal = TicketSubjectModal(self.db, self.button_data)
             await interaction.response.send_modal(modal)
-        else:
-            await self.create_ticket(interaction)
+            return
+        
+        # No modal needed - defer and create ticket directly
+        await interaction.response.defer(ephemeral=True)
+        await self.create_ticket(interaction)
     
     async def create_ticket(self, interaction: Interaction, modal_data: Dict = None):
         guild = interaction.guild
@@ -700,16 +703,25 @@ class TicketButton(Button):
                 view=view
             )
             
-            await interaction.followup.send(
-                f"✅ Dein Ticket wurde erstellt: {channel.mention}",
-                ephemeral=True
-            )
+            # Send confirmation to user
+            # Check if interaction was already responded to (e.g., from modal submit)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    f"✅ Dein Ticket wurde erstellt: {channel.mention}",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    f"✅ Dein Ticket wurde erstellt: {channel.mention}",
+                    ephemeral=True
+                )
             
         except Exception as e:
-            await interaction.followup.send(
-                f"❌ Fehler beim Erstellen des Tickets: {str(e)}",
-                ephemeral=True
-            )
+            error_msg = f"❌ Fehler beim Erstellen des Tickets: {str(e)}"
+            if not interaction.response.is_done():
+                await interaction.response.send_message(error_msg, ephemeral=True)
+            else:
+                await interaction.followup.send(error_msg, ephemeral=True)
 
 
 class TicketSubjectModal(Modal, title="Ticket erstellen"):
@@ -719,7 +731,7 @@ class TicketSubjectModal(Modal, title="Ticket erstellen"):
         self.button_data = button_data
         
         self.subject_input = TextInput(
-            label=button_data['question_title'] or "Betreff",
+            button_data['question_title'] or "Betreff",
             placeholder=button_data['question_placeholder'] or "Beschreibe kurz dein Anliegen...",
             style=discord.TextStyle.short,
             required=True,
@@ -758,7 +770,7 @@ class CustomTicketModal(Modal):
             max_length = 4000 if style == discord.TextStyle.paragraph else 200
             
             text_input = TextInput(
-                label=field.get('label', f'Feld {i+1}'),
+                field.get('label', f'Feld {i+1}'),
                 placeholder=field.get('placeholder', ''),
                 style=style,
                 required=field.get('required', True),
@@ -819,7 +831,7 @@ class CloseTicketModal(Modal, title="Ticket schließen"):
         self.user_id = user_id
         
         self.reason_input = TextInput(
-            label="Grund für das Schließen",
+            "Grund für das Schließen",
             placeholder="Optional: Gib einen Grund an...",
             style=discord.TextStyle.paragraph,
             required=False,
