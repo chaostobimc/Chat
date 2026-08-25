@@ -486,6 +486,50 @@ class Database:
         return self.get_default_support_roles() or ''
 
 
+def create_text_input(label: str, style=None, placeholder: str = None, 
+                      required: bool = True, max_length: int = None, 
+                      custom_id: str = None) -> TextInput:
+    """Create a TextInput compatible with any discord.py version."""
+    if style is None:
+        style = discord.TextStyle.short
+    
+    kwargs = {}
+    
+    # Inspect TextInput.__init__ to determine the correct signature
+    import inspect
+    sig = inspect.signature(TextInput.__init__)
+    params = sig.parameters
+    
+    # Build kwargs based on what the signature accepts
+    if 'label' in params:
+        # Has explicit 'label' parameter (keyword or positional)
+        param = params['label']
+        if param.kind == inspect.Parameter.KEYWORD_ONLY:
+            kwargs['label'] = label
+            label_arg = None
+        else:
+            label_arg = label
+    else:
+        label_arg = label
+    
+    # Add optional parameters only if they exist in the signature
+    if 'style' in params:
+        kwargs['style'] = style
+    if 'placeholder' in params and placeholder is not None:
+        kwargs['placeholder'] = placeholder
+    if 'required' in params:
+        kwargs['required'] = required
+    if 'max_length' in params and max_length is not None:
+        kwargs['max_length'] = max_length
+    if 'custom_id' in params and custom_id is not None:
+        kwargs['custom_id'] = custom_id
+    
+    if label_arg is not None:
+        return TextInput(label_arg, **kwargs)
+    else:
+        return TextInput(**kwargs)
+
+
 # ==================== TICKET PANEL VIEW ====================
 
 def get_button_style(color_name: str) -> discord.ButtonStyle:
@@ -730,10 +774,10 @@ class TicketSubjectModal(Modal, title="Ticket erstellen"):
         self.db = db
         self.button_data = button_data
         
-        self.subject_input = TextInput(
-            button_data['question_title'] or "Betreff",
-            placeholder=button_data['question_placeholder'] or "Beschreibe kurz dein Anliegen...",
+        self.subject_input = create_text_input(
+            label=button_data['question_title'] or "Betreff",
             style=discord.TextStyle.short,
+            placeholder=button_data['question_placeholder'] or "Beschreibe kurz dein Anliegen...",
             required=True,
             max_length=200
         )
@@ -769,10 +813,10 @@ class CustomTicketModal(Modal):
             style = discord.TextStyle.paragraph if field.get('style') == 'paragraph' else discord.TextStyle.short
             max_length = 4000 if style == discord.TextStyle.paragraph else 200
             
-            text_input = TextInput(
-                field.get('label', f'Feld {i+1}'),
-                placeholder=field.get('placeholder', ''),
+            text_input = create_text_input(
+                label=field.get('label', f'Feld {i+1}'),
                 style=style,
+                placeholder=field.get('placeholder', ''),
                 required=field.get('required', True),
                 max_length=max_length,
                 custom_id=f"modal_field_{i}"
@@ -830,10 +874,10 @@ class CloseTicketModal(Modal, title="Ticket schließen"):
         self.channel_id = channel_id
         self.user_id = user_id
         
-        self.reason_input = TextInput(
-            "Grund für das Schließen",
-            placeholder="Optional: Gib einen Grund an...",
+        self.reason_input = create_text_input(
+            label="Grund für das Schließen",
             style=discord.TextStyle.paragraph,
+            placeholder="Optional: Gib einen Grund an...",
             required=False,
             max_length=500
         )
