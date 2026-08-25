@@ -1,0 +1,12 @@
+# Discord Ticket Bot - Requirements
+
+# Core Discord
+discord.py>=2.3.0
+python-dotenv>=1.0.0
+
+# Web Dashboard
+Flask>=3.0.0
+Werkzeug>=3.0.0
+
+# Optional: For production
+# gunicorn>=21.0.0

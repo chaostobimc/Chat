@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}Panels - Ticket Bot Dashboard{% endblock %}
+{% block page_title %}Ticket Panels{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <p class="page-description">Verwalte deine Ticket-Panels. Panels sind die Hauptkomponenten die Tickets auf Discord erstellen.</p>
+    </div>
+    <div class="page-header-right">
+        <button class="btn btn-primary" onclick="showModal('createPanelModal')">
+            <i class="fas fa-plus"></i>
+            Neues Panel
+        </button>
+    </div>
+</div>
+
+{% if panels %}
+<div class="panels-list">
+    {% for panel in panels %}
+    <div class="panel-card">
+        <div class="panel-card-header">
+            <div class="panel-card-icon">
+                <i class="fas fa-layer-group"></i>
+            </div>
+            <div class="panel-card-info">
+                <h3>{{ panel.title }}</h3>
+                <p>{{ panel.description }}</p>
+            </div>
+            <div class="panel-card-stats">
+                <span class="badge">{{ panel.button_count }} Buttons</span>
+            </div>
+        </div>
+        
+        <div class="panel-card-footer">
+            <div class="panel-card-meta">
+                <span><i class="far fa-calendar"></i> {{ panel.created_at.strftime('%d.%m.%Y') if panel.created_at else 'N/A' }}</span>
+                {% if panel.message_id %}
+                <span class="status-active"><i class="fas fa-check-circle"></i> Aktiv</span>
+                {% else %}
+                <span class="status-inactive"><i class="fas fa-times-circle"></i> Nicht gesendet</span>
+                {% endif %}
+            </div>
+            <div class="panel-card-actions">
+                <a href="{{ url_for('edit_panel', panel_id=panel.id) }}" class="btn btn-sm btn-secondary">
+                    <i class="fas fa-edit"></i> Bearbeiten
+                </a>
+                <form method="POST" action="{{ url_for('delete_panel', panel_id=panel.id) }}" class="form-inline" onsubmit="return confirm('Panel wirklich löschen? Dies löscht auch alle Buttons!')">
+                    <button type="submit" class="btn btn-sm btn-danger">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-page">
+    <div class="empty-icon">
+        <i class="fas fa-th-large"></i>
+    </div>
+    <h3>Keine Panels vorhanden</h3>
+    <p>Erstelle dein erstes Ticket-Panel um loszulegen.</p>
+    <button class="btn btn-primary" onclick="showModal('createPanelModal')">
+        <i class="fas fa-plus"></i> Panel erstellen
+    </button>
+</div>
+{% endif %}
+
+<!-- Create Panel Modal -->
+<div class="modal" id="createPanelModal">
+    <div class="modal-backdrop" onclick="hideModal('createPanelModal')"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-plus"></i> Neues Panel erstellen</h3>
+            <button class="modal-close" onclick="hideModal('createPanelModal')">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form method="POST" action="{{ url_for('create_panel') }}">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="title">Titel</label>
+                    <input type="text" id="title" name="title" value="Support Tickets" required>
+                </div>
+                <div class="form-group">
+                    <label for="description">Beschreibung</label>
+                    <textarea id="description" name="description" rows="3" placeholder="Beschreibe das Panel...">Wähle eine Kategorie für dein Anliegen</textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="hideModal('createPanelModal')">Abbrechen</button>
+                <button type="submit" class="btn btn-primary">Erstellen</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

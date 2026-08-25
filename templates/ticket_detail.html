@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}Ticket {{ ticket.ticket_id }} - Ticket Bot{% endblock %}
+{% block page_title %}Ticket {{ ticket.ticket_id }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <a href="{{ url_for('tickets_page') }}" class="back-link">
+            <i class="fas fa-arrow-left"></i> Zurück zu Tickets
+        </a>
+    </div>
+    <div class="page-header-right">
+        <span class="status-badge status-{{ ticket.status }} status-lg">
+            {% if ticket.status == 'open' %}
+            <i class="fas fa-circle"></i> Offen
+            {% else %}
+            <i class="fas fa-check-circle"></i> Geschlossen
+            {% endif %}
+        </span>
+    </div>
+</div>
+
+<div class="ticket-detail-grid">
+    <div class="ticket-main">
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-info-circle"></i> Ticket-Informationen</h3>
+            </div>
+            <div class="card-body">
+                <div class="ticket-info-grid">
+                    <div class="info-card">
+                        <div class="info-card-icon">
+                            <i class="fas fa-hashtag"></i>
+                        </div>
+                        <div class="info-card-content">
+                            <span class="info-card-label">Ticket ID</span>
+                            <span class="info-card-value">{{ ticket.ticket_id }}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="info-card">
+                        <div class="info-card-icon">
+                            <i class="fas fa-tag"></i>
+                        </div>
+                        <div class="info-card-content">
+                            <span class="info-card-label">Kategorie</span>
+                            <span class="info-card-value">{{ ticket.button_label or 'Unbekannt' }}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="info-card">
+                        <div class="info-card-icon">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <div class="info-card-content">
+                            <span class="info-card-label">Benutzer</span>
+                            <span class="info-card-value">{{ ticket.user_id }}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="info-card">
+                        <div class="info-card-icon">
+                            <i class="fas fa-calendar"></i>
+                        </div>
+                        <div class="info-card-content">
+                            <span class="info-card-label">Erstellt</span>
+                            <span class="info-card-value">{{ ticket.created_at.strftime('%d.%m.%Y %H:%M') if ticket.created_at else '-' }}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                {% if ticket.subject %}
+                <div class="ticket-subject-box">
+                    <h4><i class="fas fa-file-alt"></i> Betreff</h4>
+                    <p>{{ ticket.subject }}</p>
+                </div>
+                {% endif %}
+                
+                {% if ticket.button_description %}
+                <div class="ticket-description-box">
+                    <h4><i class="fas fa-align-left"></i> Beschreibung</h4>
+                    <p>{{ ticket.button_description }}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        {% if transcript %}
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-file-alt"></i> Transkript</h3>
+                <span class="card-badge">{{ transcript.created_at.strftime('%d.%m.%Y %H:%M') if transcript.created_at else '' }}</span>
+            </div>
+            <div class="card-body">
+                <div class="transcript-container">
+                    <pre>{{ transcript.content }}</pre>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-file-alt"></i> Transkript</h3>
+            </div>
+            <div class="card-body">
+                <div class="empty-state small">
+                    <i class="fas fa-file-alt"></i>
+                    <p>Noch kein Transkript vorhanden.</p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    
+    <div class="ticket-sidebar">
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-sliders-h"></i> Ticket-Aktionen</h3>
+            </div>
+            <div class="card-body">
+                <div class="action-buttons">
+                    <a href="https://discord.com/channels/{{ ticket.guild_id }}/{{ ticket.channel_id }}" target="_blank" class="btn btn-discord">
+                        <i class="fab fa-discord"></i> In Discord öffnen
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-history"></i> Verlauf</h3>
+            </div>
+            <div class="card-body">
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content">
+                            <span class="timeline-title">Ticket erstellt</span>
+                            <span class="timeline-date">{{ ticket.created_at.strftime('%d.%m.%Y %H:%M') if ticket.created_at else '-' }}</span>
+                        </div>
+                    </div>
+                    {% if ticket.closed_at %}
+                    <div class="timeline-item">
+                        <div class="timeline-dot closed"></div>
+                        <div class="timeline-content">
+                            <span class="timeline-title">Ticket geschlossen</span>
+                            <span class="timeline-date">{{ ticket.closed_at.strftime('%d.%m.%Y %H:%M') if ticket.closed_at else '-' }}</span>
+                            <span class="timeline-meta">von {{ ticket.closed_by }}</span>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-database"></i> Technische Details</h3>
+            </div>
+            <div class="card-body">
+                <div class="tech-details">
+                    <div class="tech-item">
+                        <span class="tech-label">Ticket ID</span>
+                        <code>{{ ticket.ticket_id }}</code>
+                    </div>
+                    <div class="tech-item">
+                        <span class="tech-label">Channel ID</span>
+                        <code>{{ ticket.channel_id }}</code>
+                    </div>
+                    <div class="tech-item">
+                        <span class="tech-label">Guild ID</span>
+                        <code>{{ ticket.guild_id }}</code>
+                    </div>
+                    <div class="tech-item">
+                        <span class="tech-label">User ID</span>
+                        <code>{{ ticket.user_id }}</code>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

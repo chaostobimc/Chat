@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}Panel bearbeiten - Ticket Bot{% endblock %}
+{% block page_title %}Panel bearbeiten{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <a href="{{ url_for('panels_page') }}" class="back-link">
+            <i class="fas fa-arrow-left"></i> Zurück zu Panels
+        </a>
+    </div>
+</div>
+
+<div class="edit-grid">
+    <div class="edit-main">
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-cog"></i> Panel-Einstellungen</h3>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="form-group">
+                        <label for="title">Titel</label>
+                        <input type="text" id="title" name="title" value="{{ panel.title }}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="description">Beschreibung</label>
+                        <textarea id="description" name="description" rows="4">{{ panel.description }}</textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="message_id">Discord Message ID</label>
+                            <input type="text" id="message_id" name="message_id" value="{{ panel.message_id or '' }}" placeholder="Die Nachrichten-ID">
+                            <small>Die ID der Discord-Nachricht mit dem Panel</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="channel_id">Discord Channel ID</label>
+                            <input type="text" id="channel_id" name="channel_id" value="{{ panel.channel_id or '' }}" placeholder="Der Kanal-ID">
+                            <small>Der Kanal in dem das Panel gesendet wurde</small>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Änderungen speichern
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-hand-pointer"></i> Buttons in diesem Panel</h3>
+                <a href="{{ url_for('buttons_page') }}" class="btn btn-sm btn-secondary">
+                    <i class="fas fa-plus"></i> Button hinzufügen
+                </a>
+            </div>
+            <div class="card-body">
+                {% if buttons %}
+                <div class="button-list">
+                    {% for button in buttons %}
+                    <div class="button-item">
+                        <div class="button-preview">
+                            <button class="preview-btn btn-{{ button.color }}">
+                                {% if button.emoji %}{{ button.emoji }}{% endif %}
+                                {{ button.label }}
+                            </button>
+                        </div>
+                        <div class="button-details">
+                            <span class="button-label">{{ button.label }}</span>
+                            <span class="button-meta">
+                                {% if button.description %}{{ button.description[:50] }}{% endif %}
+                            </span>
+                        </div>
+                        <div class="button-actions">
+                            <a href="{{ url_for('edit_button', button_id=button.id) }}" class="btn-icon" title="Bearbeiten">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                            <form method="POST" action="{{ url_for('delete_button', button_id=button.id) }}" class="form-inline" onsubmit="return confirm('Button wirklich löschen?')">
+                                <button type="submit" class="btn-icon btn-danger" title="Löschen">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state small">
+                    <p>Keine Buttons vorhanden. Füge Buttons hinzu um das Panel zu aktivieren.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="edit-sidebar">
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-info-circle"></i> Panel-Info</h3>
+            </div>
+            <div class="card-body">
+                <div class="info-list">
+                    <div class="info-item">
+                        <span class="info-label">Panel ID</span>
+                        <span class="info-value">#{{ panel.id }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Buttons</span>
+                        <span class="info-value">{{ buttons|length }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Erstellt</span>
+                        <span class="info-value">{{ panel.created_at.strftime('%d.%m.%Y %H:%M') if panel.created_at else 'N/A' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Status</span>
+                        <span class="info-value">
+                            {% if panel.message_id %}
+                            <span class="status-active"><i class="fas fa-check-circle"></i> Aktiv</span>
+                            {% else %}
+                            <span class="status-inactive"><i class="fas fa-times-circle"></i> Nicht gesendet</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fab fa-discord"></i> Discord Setup</h3>
+            </div>
+            <div class="card-body">
+                <div class="setup-steps">
+                    <div class="setup-step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <strong>Panel speichern</strong>
+                            <p>Speichere die Einstellungen links</p>
+                        </div>
+                    </div>
+                    <div class="setup-step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <strong>Discord-Befehl</strong>
+                            <p>Nutze <code>/ticket-panel</code> in Discord</p>
+                        </div>
+                    </div>
+                    <div class="setup-step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <strong>Buttons hinzufügen</strong>
+                            <p>Nutze <code>/ticket-add</code> für jeden Button</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
