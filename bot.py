@@ -4,6 +4,7 @@ A professional ticket management system with web dashboard.
 """
 
 import os
+import io
 import json
 import sqlite3
 from datetime import datetime
@@ -20,6 +21,7 @@ from discord import (
 from discord.ui import View, button, Button, Modal, TextInput
 from discord.ext import tasks
 from dotenv import load_dotenv
+from fpdf import FPDF
 
 load_dotenv()
 
@@ -287,6 +289,16 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM ticket_buttons WHERE custom_id = ?", (custom_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_button_by_id(self, button_id: int) -> Optional[Dict]:
+        """Get a button by its database ID."""
+        if not button_id:
+            return None
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM ticket_buttons WHERE id = ?", (button_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
     
@@ -573,6 +585,125 @@ def parse_role_mentions(roles_string: str, guild: discord.Guild) -> List[discord
     return resolved
 
 
+async def generate_ticket_pdf(channel: discord.TextChannel, ticket_data: Dict, closed_by: discord.Member, reason: str) -> io.BytesIO:
+    """Generate a beautiful PDF transcript of a ticket channel."""
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    
+    # Colors
+    primary_color = (88, 101, 242)  # Discord Blurple
+    dark_bg = (47, 49, 54)          # Discord Dark
+    light_text = (255, 255, 255)
+    gray_text = (153, 170, 181)
+    
+    # Header background
+    pdf.set_fill_color(*primary_color)
+    pdf.rect(0, 0, 210, 50, 'F')
+    
+    # Header text
+    pdf.set_font('Helvetica', 'B', 24)
+    pdf.set_text_color(*light_text)
+    pdf.set_xy(10, 10)
+    pdf.cell(0, 10, f'Ticket Transcript', ln=True)
+    
+    pdf.set_font('Helvetica', '', 12)
+    pdf.set_x(10)
+    pdf.cell(0, 8, f'{ticket_data.get("ticket_id", "Unknown")}', ln=True)
+    
+    pdf.set_font('Helvetica', '', 10)
+    pdf.set_x(10)
+    pdf.cell(0, 6, f'Generated on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}', ln=True)
+    
+    # Ticket info box
+    pdf.set_y(60)
+    pdf.set_fill_color(*dark_bg)
+    pdf.rect(10, pdf.get_y(), 190, 40, 'F')
+    
+    pdf.set_font('Helvetica', 'B', 11)
+    pdf.set_text_color(*light_text)
+    pdf.set_xy(15, pdf.get_y() + 5)
+    pdf.cell(90, 6, f'User ID: {ticket_data.get("user_id", "Unknown")}', ln=False)
+    pdf.cell(90, 6, f'Channel: #{channel.name}', ln=True)
+    
+    pdf.set_font('Helvetica', '', 10)
+    pdf.set_text_color(*gray_text)
+    pdf.set_x(15)
+    pdf.cell(90, 6, f'Created: {ticket_data.get("created_at", "Unknown")}', ln=False)
+    pdf.cell(90, 6, f'Status: {ticket_data.get("status", "Unknown")}', ln=True)
+    
+    pdf.set_x(15)
+    pdf.cell(90, 6, f'Closed by: {closed_by.name}', ln=False)
+    pdf.cell(90, 6, f'Closed at: {datetime.now().strftime("%Y-%m-%d %H:%M")}', ln=True)
+    
+    pdf.set_x(15)
+    pdf.set_font('Helvetica', 'I', 9)
+    pdf.cell(0, 6, f'Reason: {reason}', ln=True)
+    
+    # Messages section
+    pdf.set_y(110)
+    pdf.set_font('Helvetica', 'B', 14)
+    pdf.set_text_color(*primary_color)
+    pdf.cell(0, 10, 'Chat History', ln=True)
+    pdf.ln(2)
+    
+    # Fetch messages
+    messages = []
+    async for msg in channel.history(limit=1000, oldest_first=True):
+        messages.append(msg)
+    
+    # Render messages
+    pdf.set_font('Helvetica', '', 10)
+    for msg in messages:
+        # Check if we need a new page
+        if pdf.get_y() > 260:
+            pdf.add_page()
+        
+        # Timestamp
+        pdf.set_font('Helvetica', '', 8)
+        pdf.set_text_color(*gray_text)
+        timestamp = msg.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        pdf.cell(0, 4, timestamp, ln=True)
+        
+        # Username
+        pdf.set_font('Helvetica', 'B', 10)
+        pdf.set_text_color(*primary_color)
+        username = msg.author.display_name if hasattr(msg.author, 'display_name') else str(msg.author)
+        pdf.cell(0, 5, username, ln=True)
+        
+        # Message content
+        pdf.set_font('Helvetica', '', 10)
+        pdf.set_text_color(50, 50, 50)
+        
+        if msg.content:
+            # Word wrap long messages
+            content = msg.content
+            pdf.multi_cell(0, 5, content)
+        elif msg.attachments:
+            pdf.set_font('Helvetica', 'I', 9)
+            pdf.set_text_color(*gray_text)
+            for att in msg.attachments:
+                pdf.cell(0, 5, f'[Attachment: {att.filename}]', ln=True)
+        else:
+            pdf.set_font('Helvetica', 'I', 9)
+            pdf.set_text_color(*gray_text)
+            pdf.cell(0, 5, '[No text content]', ln=True)
+        
+        pdf.ln(3)
+    
+    # Footer
+    pdf.set_y(-20)
+    pdf.set_font('Helvetica', 'I', 8)
+    pdf.set_text_color(*gray_text)
+    pdf.cell(0, 10, f'Total messages: {len(messages)} | Page {pdf.page_no()}', align='C')
+    
+    # Save to bytes
+    pdf_bytes = io.BytesIO()
+    pdf.output(pdf_bytes)
+    pdf_bytes.seek(0)
+    return pdf_bytes
+
+
 class TicketPanelView(View):
     def __init__(self, db: Database, guild_id: str, panel_id: int = None):
         super().__init__(timeout=None)
@@ -828,13 +959,68 @@ class CustomTicketModal(Modal):
 
 
 class TicketActionView(View):
-    def __init__(self, channel_id: str = None, user_id: str = None):
+    def __init__(self, channel_id: str = None, user_id: str = None, claimed_by: str = None):
         super().__init__(timeout=None)
         self.channel_id = channel_id
         self.user_id = user_id
+        self.claimed_by = claimed_by
+        
+        # Update claim button label if already claimed
+        if claimed_by:
+            for child in self.children:
+                if hasattr(child, 'custom_id') and child.custom_id == 'ticket_claim':
+                    child.label = f'Claimed by {claimed_by}'
+                    child.disabled = True
+                    child.style = discord.ButtonStyle.grey
+    
+    @button(style=discord.ButtonStyle.green, label="Claim", emoji="🎯", custom_id="ticket_claim")
+    async def claim_ticket(self, interaction: Interaction, btn: Button):
+        await interaction.response.defer(ephemeral=True)
+        
+        # Check if user has permission (manage_guild or has support role)
+        if not interaction.user.guild_permissions.manage_guild:
+            ticket = client.db.get_ticket_by_channel(str(interaction.channel.id))
+            if ticket:
+                button_data = client.db.get_button_by_id(ticket.get('button_id'))
+                if button_data:
+                    effective_roles = client.db.get_effective_support_roles(button_data)
+                    support_roles = parse_role_mentions(effective_roles, interaction.guild)
+                    user_role_ids = [r.id for r in interaction.user.roles]
+                    has_support_role = any(r.id in user_role_ids for r in support_roles)
+                    if not has_support_role:
+                        await interaction.followup.send(
+                            "❌ Du hast keine Berechtigung dieses Ticket zu claimen.",
+                            ephemeral=True
+                        )
+                        return
+        
+        # Update the button
+        btn.label = f'Claimed by {interaction.user.display_name}'
+        btn.disabled = True
+        btn.style = discord.ButtonStyle.grey
+        
+        # Update the message
+        try:
+            await interaction.message.edit(view=self)
+        except Exception:
+            pass
+        
+        # Send notification
+        embed = discord.Embed(
+            title="🎯 Ticket Claimed",
+            description=f"**{interaction.user.mention}** hat dieses Ticket übernommen.",
+            color=discord.Color.green()
+        )
+        embed.timestamp = datetime.now()
+        await interaction.channel.send(embed=embed)
+        
+        await interaction.followup.send(
+            "✅ Du hast das Ticket erfolgreich übernommen!",
+            ephemeral=True
+        )
     
     @button(style=discord.ButtonStyle.red, label="Schließen", emoji="🔒", custom_id="ticket_close")
-    async def close_ticket(self, interaction: Interaction, button: Button):
+    async def close_ticket(self, interaction: Interaction, btn: Button):
         # Use interaction data if available (persistent view after restart)
         channel_id = self.channel_id or str(interaction.channel.id)
         user_id = self.user_id or str(interaction.user.id)
@@ -843,7 +1029,7 @@ class TicketActionView(View):
         await interaction.response.send_modal(modal)
     
     @button(style=discord.ButtonStyle.grey, label="Transkript", emoji="📄", custom_id="ticket_transcript")
-    async def transcript_ticket(self, interaction: Interaction, button: Button):
+    async def transcript_ticket(self, interaction: Interaction, btn: Button):
         await interaction.response.defer(ephemeral=True)
         
         channel = interaction.channel
@@ -863,7 +1049,6 @@ class TicketActionView(View):
         client.db.save_transcript(ticket['ticket_id'], transcript)
         
         # Send as file
-        import io
         file = discord.File(
             io.BytesIO(transcript.encode('utf-8')),
             filename=f"transcript_{ticket['ticket_id']}.txt"
@@ -892,26 +1077,105 @@ class CloseTicketModal(Modal, title="Ticket schließen"):
         self.add_item(self.reason_input)
     
     async def on_submit(self, interaction: Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
         channel = interaction.channel
         reason = self.reason_input.value or "Kein Grund angegeben"
         
-        embed = discord.Embed(
-            title="🔒 Ticket geschlossen",
-            description=f"**Ticket-ID:** `{self.channel_id}`\n**Geschlossen von:** {interaction.user.mention}\n**Grund:** {reason}",
+        # Get ticket data from database
+        ticket = client.db.get_ticket_by_channel(str(channel.id))
+        if not ticket:
+            # Fallback: try to get ticket data from DB even if status isn't 'open'
+            with client.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM tickets WHERE channel_id = ?", (str(channel.id),))
+                row = cursor.fetchone()
+                ticket = dict(row) if row else {
+                    'ticket_id': f'unknown-{channel.id}',
+                    'user_id': self.user_id,
+                    'status': 'open',
+                    'created_at': 'Unknown'
+                }
+        
+        # Close ticket in database
+        client.db.close_ticket(str(channel.id), str(interaction.user.id))
+        
+        # Generate transcript text for DB
+        transcript_content = []
+        async for msg in channel.history(limit=500, oldest_first=True):
+            timestamp = msg.created_at.strftime('%d.%m.%Y %H:%M')
+            content = msg.content or '[Kein Text]'
+            transcript_content.append(f"[{timestamp}] {msg.author}: {content}")
+        transcript_text = "\n".join(transcript_content)
+        client.db.save_transcript(ticket.get('ticket_id', 'unknown'), transcript_text)
+        
+        # Send closing embed to channel before deletion
+        close_embed = discord.Embed(
+            title="🔒 Ticket wird geschlossen",
+            description=(
+                f"**Ticket:** `{ticket.get('ticket_id', 'Unknown')}`\n"
+                f"**Geschlossen von:** {interaction.user.mention}\n"
+                f"**Grund:** {reason}\n\n"
+                "⏳ Transkript wird erstellt und der Kanal wird in 5 Sekunden gelöscht..."
+            ),
             color=discord.Color.orange()
         )
-        embed.timestamp = datetime.now()
+        close_embed.timestamp = datetime.now()
         
-        await channel.send(embed=embed)
-        await channel.set_permissions(
-            interaction.guild.default_role,
-            overwrite=PermissionOverwrite(read_messages=False)
-        )
+        try:
+            await channel.send(embed=close_embed)
+        except Exception:
+            pass
         
-        await interaction.response.send_message(
-            "✅ Ticket wurde geschlossen.",
+        # Generate PDF transcript
+        try:
+            pdf_bytes = await generate_ticket_pdf(channel, ticket, interaction.user, reason)
+            pdf_filename = f"transcript_{ticket.get('ticket_id', 'unknown')}.pdf"
+            pdf_file = discord.File(pdf_bytes, filename=pdf_filename)
+            
+            # Send PDF to log channel
+            log_channel_id = client.db.get_setting('log_channel_id', '')
+            if log_channel_id:
+                try:
+                    log_channel = interaction.guild.get_channel(int(log_channel_id))
+                    if log_channel:
+                        log_embed = discord.Embed(
+                            title="📋 Ticket Transkript",
+                            description=(
+                                f"**Ticket:** `{ticket.get('ticket_id', 'Unknown')}`\n"
+                                f"**Benutzer:** <@{ticket.get('user_id', 'Unknown')}>\n"
+                                f"**Kanal:** #{channel.name}\n"
+                                f"**Geschlossen von:** {interaction.user.mention}\n"
+                                f"**Grund:** {reason}"
+                            ),
+                            color=discord.Color.blue()
+                        )
+                        log_embed.timestamp = datetime.now()
+                        log_embed.set_footer(text=f"Geschlossen am {datetime.now().strftime('%d.%m.%Y um %H:%M')}")
+                        
+                        await log_channel.send(embed=log_embed, file=pdf_file)
+                        print(f"📄 PDF transcript sent to log channel for {ticket.get('ticket_id')}")
+                except Exception as e:
+                    print(f"❌ Error sending PDF to log channel: {e}")
+            else:
+                print("⚠️ No log channel configured. Set 'log_channel_id' in dashboard settings.")
+        except Exception as e:
+            print(f"❌ Error generating PDF transcript: {e}")
+        
+        # Confirm to user
+        await interaction.followup.send(
+            "✅ Ticket wurde geschlossen. Transkript wurde erstellt und der Kanal wird gleich gelöscht.",
             ephemeral=True
         )
+        
+        # Wait 5 seconds then delete the channel
+        import asyncio
+        await asyncio.sleep(5)
+        
+        try:
+            await channel.delete(reason=f"Ticket closed by {interaction.user}: {reason}")
+        except Exception as e:
+            print(f"❌ Error deleting ticket channel: {e}")
 
 
 # ==================== BOT CLASS ====================
@@ -1243,33 +1507,77 @@ async def close_ticket(interaction: Interaction, reason: str = None):
         )
         return
     
+    await interaction.response.defer(ephemeral=True)
+    
+    reason = reason or "Kein Grund angegeben"
+    
+    # Close ticket in database
     client.db.close_ticket(str(channel.id), str(user.id))
     
+    # Save transcript
     transcript_content = []
-    async for msg in channel.history(limit=500):
-        transcript_content.append(f"[{msg.created_at.strftime('%d.%m.%Y %H:%M')}] {msg.author}: {msg.content}")
+    async for msg in channel.history(limit=500, oldest_first=True):
+        timestamp = msg.created_at.strftime('%d.%m.%Y %H:%M')
+        content = msg.content or '[Kein Text]'
+        transcript_content.append(f"[{timestamp}] {msg.author}: {content}")
+    transcript_text = "\n".join(transcript_content)
+    client.db.save_transcript(ticket['ticket_id'], transcript_text)
     
-    transcript = "\n".join(transcript_content)
-    client.db.save_transcript(ticket['ticket_id'], transcript)
-    
-    await channel.set_permissions(
-        interaction.guild.default_role,
-        overwrite=PermissionOverwrite(read_messages=False)
-    )
-    
-    embed = discord.Embed(
-        title="🔒 Ticket geschlossen",
-        description=f"**Ticket-ID:** `{ticket['ticket_id']}`\n**Geschlossen von:** {user.mention}\n**Grund:** {reason or 'Nicht angegeben'}",
+    # Closing embed
+    close_embed = discord.Embed(
+        title="🔒 Ticket wird geschlossen",
+        description=(
+            f"**Ticket:** `{ticket['ticket_id']}`\n"
+            f"**Geschlossen von:** {user.mention}\n"
+            f"**Grund:** {reason}\n\n"
+            "⏳ Transkript wird erstellt und der Kanal wird in 5 Sekunden gelöscht..."
+        ),
         color=discord.Color.orange()
     )
-    embed.timestamp = datetime.now()
+    close_embed.timestamp = datetime.now()
     
-    await channel.send(embed=embed)
+    try:
+        await channel.send(embed=close_embed)
+    except Exception:
+        pass
     
-    await interaction.response.send_message(
-        "✅ Ticket wurde geschlossen.",
+    # Generate and send PDF to log channel
+    try:
+        pdf_bytes = await generate_ticket_pdf(channel, ticket, user, reason)
+        pdf_file = discord.File(pdf_bytes, filename=f"transcript_{ticket['ticket_id']}.pdf")
+        
+        log_channel_id = client.db.get_setting('log_channel_id', '')
+        if log_channel_id:
+            log_channel = interaction.guild.get_channel(int(log_channel_id))
+            if log_channel:
+                log_embed = discord.Embed(
+                    title="📋 Ticket Transkript",
+                    description=(
+                        f"**Ticket:** `{ticket['ticket_id']}`\n"
+                        f"**Benutzer:** <@{ticket['user_id']}>\n"
+                        f"**Kanal:** #{channel.name}\n"
+                        f"**Geschlossen von:** {user.mention}\n"
+                        f"**Grund:** {reason}"
+                    ),
+                    color=discord.Color.blue()
+                )
+                log_embed.timestamp = datetime.now()
+                await log_channel.send(embed=log_embed, file=pdf_file)
+    except Exception as e:
+        print(f"❌ Error generating/sending PDF: {e}")
+    
+    await interaction.followup.send(
+        "✅ Ticket geschlossen. Kanal wird in 5 Sekunden gelöscht.",
         ephemeral=True
     )
+    
+    # Delete channel after delay
+    import asyncio
+    await asyncio.sleep(5)
+    try:
+        await channel.delete(reason=f"Ticket closed by {user}: {reason}")
+    except Exception as e:
+        print(f"❌ Error deleting channel: {e}")
 
 
 @client.tree.command(name="ticket-stats", description="Zeigt Ticket-Statistiken")

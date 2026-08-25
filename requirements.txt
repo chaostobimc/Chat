@@ -8,5 +8,9 @@ python-dotenv>=1.0.0
 Flask>=3.0.0
 Werkzeug>=3.0.0
 
+# PDF Generation for Transcripts
+fpdf2>=2.8.0
+Pillow>=10.0.0
+
 # Optional: For production
 # gunicorn>=21.0.0

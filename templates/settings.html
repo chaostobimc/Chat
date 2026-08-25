@@ -118,6 +118,36 @@
                 </form>
             </div>
         </div>
+
+        <!-- NEW: Log Channel Settings -->
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-file-pdf"></i> Transkript & Log-Kanal</h3>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('save_settings') }}">
+                    <div class="form-group">
+                        <label for="log_channel_select"><i class="fas fa-hashtag"></i> Log-Kanal für Transkripte</label>
+                        <select id="log_channel_select" name="setting_log_channel_id">
+                            <option value="">Kein Log-Kanal (Transkripte werden nicht gespeichert)</option>
+                        </select>
+                        <input type="text" id="log_channel_manual" name="log_channel_manual" 
+                               placeholder="Oder Kanal-ID manuell eingeben..." 
+                               style="margin-top: 8px;">
+                        <small>
+                            Wenn ein Ticket geschlossen wird, wird automatisch ein schön gestaltetes 
+                            <strong>PDF-Transkript</strong> in diesen Kanal gesendet. Der Ticket-Kanal 
+                            wird danach automatisch <strong>gelöscht</strong>.
+                        </small>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Speichern
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
     
     <div class="settings-sidebar">
@@ -184,6 +214,7 @@
 <script>
 // Load available roles from API for the default roles selector
 let availableRoles = [];
+let availableChannels = [];
 
 async function loadRoles() {
     try {
@@ -193,6 +224,62 @@ async function loadRoles() {
     } catch (e) {
         console.error('Failed to load roles:', e);
     }
+}
+
+async function loadChannels() {
+    try {
+        const res = await fetch('/api/channels');
+        availableChannels = await res.json();
+        populateLogChannelDropdown();
+    } catch (e) {
+        console.error('Failed to load channels:', e);
+    }
+}
+
+function populateLogChannelDropdown() {
+    const select = document.getElementById('log_channel_select');
+    if (!select) return;
+    
+    // Keep the first empty option
+    const currentValue = '{{ settings.get("log_channel_id", "") }}';
+    select.innerHTML = '<option value="">Kein Log-Kanal (Transkripte werden nicht gespeichert)</option>';
+    
+    // Group by category
+    const categories = {};
+    const uncategorized = [];
+    
+    availableChannels.forEach(ch => {
+        if (ch.channel_type !== 'text') return;
+        if (ch.category_name) {
+            if (!categories[ch.category_name]) categories[ch.category_name] = [];
+            categories[ch.category_name].push(ch);
+        } else {
+            uncategorized.push(ch);
+        }
+    });
+    
+    // Add uncategorized
+    uncategorized.forEach(ch => {
+        const opt = document.createElement('option');
+        opt.value = ch.channel_id;
+        opt.textContent = '#' + ch.channel_name;
+        if (ch.channel_id === currentValue) opt.selected = true;
+        select.appendChild(opt);
+    });
+    
+    // Add categorized
+    Object.keys(categories).sort().forEach(catName => {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = '📁 ' + catName;
+        categories[catName].forEach(ch => {
+            const opt = document.createElement('option');
+            opt.value = ch.channel_id;
+            opt.textContent = '#' + ch.channel_name;
+            if (ch.channel_id === currentValue) opt.selected = true;
+            optgroup.appendChild(opt);
+        });
+        select.appendChild(optgroup);
+    });
 }
 
 function populateRoleDropdown() {
@@ -272,6 +359,7 @@ function updateDefaultRolesHidden() {
 
 document.addEventListener('DOMContentLoaded', function() {
     loadRoles();
+    loadChannels();
     initDefaultRoles();
 });
 </script>

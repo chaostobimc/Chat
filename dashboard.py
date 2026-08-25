@@ -495,6 +495,14 @@ def save_settings():
                 (setting_key, value)
             )
     
+    # Handle manual channel ID input for log channel
+    manual_log_channel = request.form.get('log_channel_manual', '').strip()
+    if manual_log_channel:
+        db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            ('log_channel_id', manual_log_channel)
+        )
+    
     db.commit()
     db.close()
     
