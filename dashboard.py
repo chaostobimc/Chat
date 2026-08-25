@@ -30,8 +30,21 @@ def get_db():
     return conn
 
 def dict_from_row(row):
-    """Convert sqlite Row to dict."""
-    return dict(row) if row else None
+    """Convert sqlite Row to dict with datetime parsing."""
+    if row is None:
+        return None
+    d = dict(row)
+    # Parse datetime strings to datetime objects
+    for key, value in d.items():
+        if isinstance(value, str) and len(value) > 10:
+            # Try to parse common datetime formats
+            for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S']:
+                try:
+                    d[key] = datetime.strptime(value[:19], fmt)
+                    break
+                except (ValueError, TypeError):
+                    pass
+    return d
 
 
 # ==================== AUTH ====================
@@ -119,9 +132,9 @@ def dashboard():
     db.close()
     
     # Convert to list of dicts
-    recent_tickets = [dict(row) for row in recent_tickets]
-    panels = [dict(row) for row in panels]
-    buttons = [dict(row) for row in buttons]
+    recent_tickets = [dict_from_row(row) for row in recent_tickets]
+    panels = [dict_from_row(row) for row in panels]
+    buttons = [dict_from_row(row) for row in buttons]
     
     return render_template(
         'dashboard.html',
@@ -148,7 +161,7 @@ def panels_page():
     """).fetchall()
     db.close()
     
-    panels = [dict(row) for row in panels]
+    panels = [dict_from_row(row) for row in panels]
     return render_template('panels.html', panels=panels)
 
 
@@ -196,7 +209,7 @@ def edit_panel(panel_id):
     buttons = db.execute("SELECT * FROM ticket_buttons WHERE panel_id = ?", (panel_id,)).fetchall()
     db.close()
     
-    return render_template('panel_edit.html', panel=dict(panel), buttons=[dict(b) for b in buttons])
+    return render_template('panel_edit.html', panel=dict_from_row(panel), buttons=[dict_from_row(b) for b in buttons])
 
 
 @app.route('/panels/<int:panel_id>/delete', methods=['POST'])
@@ -229,8 +242,8 @@ def buttons_page():
     
     return render_template(
         'buttons.html', 
-        buttons=[dict(b) for row in buttons for b in [row]],  # Convert
-        panels=[dict(p) for p in panels]
+        buttons=[dict_from_row(row) for row in buttons],
+        panels=[dict_from_row(row) for row in panels]
     )
 
 
@@ -349,7 +362,7 @@ def edit_button(button_id):
     db.close()
     
     # Parse modal fields for template
-    button_dict = dict(button)
+    button_dict = dict_from_row(button)
     if button_dict.get('modal_fields'):
         try:
             import json
@@ -362,7 +375,7 @@ def edit_button(button_id):
     return render_template(
         'button_edit.html', 
         button=button_dict, 
-        panels=[dict(p) for p in panels]
+        panels=[dict_from_row(row) for row in panels]
     )
 
 
@@ -403,7 +416,7 @@ def tickets_page():
         """, (status,)).fetchall()
     db.close()
     
-    tickets = [dict(row) for row in tickets]
+    tickets = [dict_from_row(row) for row in tickets]
     
     return render_template('tickets.html', tickets=tickets, status=status)
 
@@ -433,8 +446,8 @@ def ticket_detail(ticket_id):
     
     return render_template(
         'ticket_detail.html', 
-        ticket=dict(ticket),
-        transcript=dict(transcript) if transcript else None
+        ticket=dict_from_row(ticket),
+        transcript=dict_from_row(transcript) if transcript else None
     )
 
 
