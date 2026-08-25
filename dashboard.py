@@ -506,10 +506,10 @@ def api_stats():
 # ==================== MAIN ====================
 
 if __name__ == "__main__":
-    # Ensure database directory exists
     os.makedirs("database", exist_ok=True)
     
-    # Run dashboard
-    print("🌐 Dashboard wird gestartet auf http://localhost:5000")
+    port = int(os.getenv("DASHBOARD_PORT", 3000))
+    
+    print(f"🌐 Dashboard wird gestartet auf http://localhost:{port}")
     print("🔐 Standard-Passwort: admin (ändere es in settings!)")
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=True)
