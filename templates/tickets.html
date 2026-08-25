@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Tickets - Ticket Bot Dashboard{% endblock %}
+{% block page_title %}Tickets{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <div class="filter-tabs">
+            <a href="{{ url_for('tickets_page', status='all') }}" class="filter-tab {% if status == 'all' %}active{% endif %}">
+                Alle
+            </a>
+            <a href="{{ url_for('tickets_page', status='open') }}" class="filter-tab {% if status == 'open' %}active{% endif %}">
+                <i class="fas fa-folder-open"></i> Offen
+            </a>
+            <a href="{{ url_for('tickets_page', status='closed') }}" class="filter-tab {% if status == 'closed' %}active{% endif %}">
+                <i class="fas fa-folder-check"></i> Geschlossen
+            </a>
+        </div>
+    </div>
+</div>
+
+{% if tickets %}
+<div class="tickets-table-container">
+    <table class="tickets-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Kategorie</th>
+                <th>Betreff</th>
+                <th>User ID</th>
+                <th>Erstellt</th>
+                <th>Status</th>
+                <th>Aktionen</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for ticket in tickets %}
+            <tr>
+                <td>
+                    <span class="ticket-id-badge">{{ ticket.ticket_id }}</span>
+                </td>
+                <td>
+                    <span class="category-badge">{{ ticket.button_label or 'Unbekannt' }}</span>
+                </td>
+                <td>
+                    <span class="ticket-subject">{{ ticket.subject or 'Kein Betreff' }}</span>
+                </td>
+                <td>
+                    <code class="user-id">{{ ticket.user_id }}</code>
+                </td>
+                <td>
+                    <span class="ticket-date">{{ ticket.created_at.strftime('%d.%m.%Y %H:%M') if ticket.created_at else '-' }}</span>
+                </td>
+                <td>
+                    <span class="status-badge status-{{ ticket.status }}">
+                        {% if ticket.status == 'open' %}
+                        <i class="fas fa-circle"></i> Offen
+                        {% else %}
+                        <i class="fas fa-check-circle"></i> Geschlossen
+                        {% endif %}
+                    </span>
+                </td>
+                <td>
+                    <a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}" class="btn-icon" title="Ansehen">
+                        <i class="fas fa-eye"></i>
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-page">
+    <div class="empty-icon">
+        <i class="fas fa-inbox"></i>
+    </div>
+    <h3>Keine Tickets vorhanden</h3>
+    <p>Es wurden noch keine Tickets erstellt.</p>
+</div>
+{% endif %}
+{% endblock %}

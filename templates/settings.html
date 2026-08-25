@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+
+{% block title %}Einstellungen - Ticket Bot Dashboard{% endblock %}
+{% block page_title %}Einstellungen{% endblock %}
+
+{% block content %}
+<div class="settings-grid">
+    <div class="settings-main">
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-shield-alt"></i> Dashboard-Sicherheit</h3>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('save_settings') }}">
+                    <div class="form-group">
+                        <label for="setting_dashboard_password">Dashboard Passwort</label>
+                        <input type="password" id="setting_dashboard_password" name="setting_dashboard_password" 
+                               value="{{ settings.get('dashboard_password', '') }}" placeholder="Neues Passwort eingeben">
+                        <small>Das Passwort für den Zugriff auf das Dashboard. Standard: admin</small>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Speichern
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-cog"></i> Ticket-Einstellungen</h3>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('save_settings') }}">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="setting_default_max_tickets">Standard Max. Tickets</label>
+                            <input type="number" id="setting_default_max_tickets" name="setting_default_max_tickets" 
+                                   value="{{ settings.get('default_max_tickets', '3') }}" min="1" max="99">
+                            <small>Wie viele offene Tickets pro Person erlaubt sind</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="setting_close_delay">Auto-Close Verzögerung (Minuten)</label>
+                            <input type="number" id="setting_close_delay" name="setting_close_delay" 
+                                   value="{{ settings.get('close_delay', '0') }}" min="0" max="10080">
+                            <small>0 = deaktiviert</small>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Speichern
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- NEW: Default Support Roles Card -->
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-users"></i> Standard Support-Rollen</h3>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('save_settings') }}">
+                    <div class="form-group">
+                        <label for="default_roles_input"><i class="fas fa-at"></i> Support-Rollen (Standard für alle Tickets)</label>
+                        <div class="role-mention-input" id="default_roles_container">
+                            <div class="role-tags" id="default_roles_tags"></div>
+                            <input type="text" id="default_roles_input" 
+                                   placeholder="Tippe @Rollenname oder Rollen-ID und drücke Enter..."
+                                   autocomplete="off">
+                            <input type="hidden" name="setting_default_support_roles" id="default_roles_hidden"
+                                   value="{{ settings.get('default_support_roles', '') }}">
+                        </div>
+                        <small>
+                            Diese Rollen haben standardmäßig Zugriff auf alle Tickets. 
+                            Tippe <code>@Rollenname</code> oder eine Rollen-ID. 
+                            Du kannst mehrere Rollen hinzufügen (Enter drücken nach jeder Rolle).
+                            <br><em>Wird auf Button-Ebene überschrieben, wenn dort eigene Rollen gesetzt sind.</em>
+                        </small>
+                    </div>
+                    
+                    <!-- Available roles dropdown -->
+                    <div class="form-group" id="default_roles_dropdown_container" style="display:none;">
+                        <label><i class="fas fa-list"></i> Verfügbare Rollen (Klick zum Hinzufügen)</label>
+                        <div class="role-dropdown-list" id="default_roles_dropdown"></div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Speichern
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-palette"></i> Ticket-Nachrichten</h3>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('save_settings') }}">
+                    <div class="form-group">
+                        <label for="setting_welcome_message">Willkommensnachricht</label>
+                        <textarea id="setting_welcome_message" name="setting_welcome_message" rows="3">{{ settings.get('welcome_message', 'Willkommen! Dein Ticket wurde erstellt. Ein Teammitglied wird sich so schnell wie möglich bei dir melden.') }}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="setting_close_message">Schließen-Nachricht</label>
+                        <textarea id="setting_close_message" name="setting_close_message" rows="3">{{ settings.get('close_message', 'Ticket wurde geschlossen.') }}</textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Speichern
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="settings-sidebar">
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-info-circle"></i> System-Info</h3>
+            </div>
+            <div class="card-body">
+                <div class="system-info">
+                    <div class="system-item">
+                        <span class="system-label">Dashboard Version</span>
+                        <span class="system-value">1.0.0</span>
+                    </div>
+                    <div class="system-item">
+                        <span class="system-label">Python</span>
+                        <span class="system-value">3.9+</span>
+                    </div>
+                    <div class="system-item">
+                        <span class="system-label">Flask</span>
+                        <span class="system-value">Latest</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-book"></i> Hilfe</h3>
+            </div>
+            <div class="card-body">
+                <div class="help-section">
+                    <h4>Discord-Befehle</h4>
+                    <ul class="help-list">
+                        <li><code>/ticket-panel</code> - Erstellt ein neues Panel</li>
+                        <li><code>/ticket-add</code> - Fügt einen Button hinzu</li>
+                        <li><code>/ticket-close</code> - Schließt ein Ticket</li>
+                        <li><code>/ticket-stats</code> - Zeigt Statistiken</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-terminal"></i> Bot starten</h3>
+            </div>
+            <div class="card-body">
+                <p class="help-text">Starte den Bot und das Dashboard separat:</p>
+                <div class="code-block">
+                    <code>
+                        # Terminal 1: Bot<br>
+                        python bot.py<br><br>
+                        # Terminal 2: Dashboard<br>
+                        python dashboard.py
+                    </code>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Load available roles from API for the default roles selector
+let availableRoles = [];
+
+async function loadRoles() {
+    try {
+        const res = await fetch('/api/roles');
+        availableRoles = await res.json();
+        populateRoleDropdown();
+    } catch (e) {
+        console.error('Failed to load roles:', e);
+    }
+}
+
+function populateRoleDropdown() {
+    const dropdown = document.getElementById('default_roles_dropdown');
+    const container = document.getElementById('default_roles_dropdown_container');
+    if (!dropdown || !container) return;
+    
+    dropdown.innerHTML = '';
+    if (availableRoles.length === 0) {
+        dropdown.innerHTML = '<p class="role-dropdown-empty">Keine Rollen gefunden. Starte den Bot damit Rollen geladen werden.</p>';
+        container.style.display = 'block';
+        return;
+    }
+    
+    availableRoles.forEach(role => {
+        const item = document.createElement('div');
+        item.className = 'role-dropdown-item';
+        item.innerHTML = `<span class="role-color-dot" style="background:${role.role_color}"></span> @${role.role_name}`;
+        item.onclick = () => {
+            addDefaultRoleTag(`@${role.role_name}`);
+        };
+        dropdown.appendChild(item);
+    });
+    container.style.display = 'block';
+}
+
+// Default Roles tag management
+function initDefaultRoles() {
+    const hidden = document.getElementById('default_roles_hidden');
+    const input = document.getElementById('default_roles_input');
+    if (!hidden || !input) return;
+    
+    // Parse existing roles
+    const existing = hidden.value.split(',').filter(r => r.trim());
+    existing.forEach(role => addDefaultRoleTag(role.trim()));
+    
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const val = this.value.trim();
+            if (val) {
+                addDefaultRoleTag(val);
+                this.value = '';
+            }
+        }
+    });
+}
+
+function addDefaultRoleTag(roleText) {
+    const tagsContainer = document.getElementById('default_roles_tags');
+    const hidden = document.getElementById('default_roles_hidden');
+    
+    // Check duplicate
+    const current = hidden.value.split(',').map(r => r.trim()).filter(r => r);
+    if (current.includes(roleText)) return;
+    
+    const tag = document.createElement('span');
+    tag.className = 'role-tag';
+    tag.innerHTML = `<span class="role-tag-text">${roleText}</span><button type="button" class="role-tag-remove" onclick="removeDefaultRoleTag(this)">&times;</button>`;
+    tag.dataset.role = roleText;
+    tagsContainer.appendChild(tag);
+    
+    updateDefaultRolesHidden();
+}
+
+function removeDefaultRoleTag(btn) {
+    btn.parentElement.remove();
+    updateDefaultRolesHidden();
+}
+
+function updateDefaultRolesHidden() {
+    const tags = document.querySelectorAll('#default_roles_tags .role-tag');
+    const roles = [];
+    tags.forEach(tag => roles.push(tag.dataset.role));
+    document.getElementById('default_roles_hidden').value = roles.join(',');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadRoles();
+    initDefaultRoles();
+});
+</script>
+{% endblock %}

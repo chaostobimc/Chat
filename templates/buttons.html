@@ -1,0 +1,345 @@
+{% extends "base.html" %}
+
+{% block title %}Buttons - Ticket Bot Dashboard{% endblock %}
+{% block page_title %}Ticket Buttons{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <p class="page-description">Buttons sind die klickbaren Elemente in deinen Ticket-Panels. Jeder Button erstellt ein Ticket in einer bestimmten Kategorie.</p>
+    </div>
+    <div class="page-header-right">
+        <button class="btn btn-primary" onclick="showModal('createButtonModal')">
+            <i class="fas fa-plus"></i>
+            Neuer Button
+        </button>
+    </div>
+</div>
+
+{% if buttons %}
+<div class="buttons-grid">
+    {% for button in buttons %}
+    <div class="button-card">
+        {% if button.image_local or button.image_url %}
+        <div class="button-card-image">
+            <img src="{{ button.image_local or button.image_url }}" alt="{{ button.label }}">
+        </div>
+        {% endif %}
+        <div class="button-card-preview">
+            <button class="preview-btn btn-{{ button.color }} btn-{{ button.id }}">
+                {% if button.emoji %}{{ button.emoji }} {% endif %}{{ button.label }}
+            </button>
+        </div>
+        <div class="button-card-content">
+            <h4>{{ button.label }}</h4>
+            <span class="badge badge-panel">{{ button.panel_title }}</span>
+            {% if button.description %}
+            <p class="button-description">{{ button.description[:80] }}{% if button.description|length > 80 %}...{% endif %}</p>
+            {% endif %}
+            <div class="button-card-meta">
+                <span><i class="fas fa-layer-group"></i> Max: {{ button.max_tickets }}</span>
+                {% if button.require_question %}
+                <span><i class="fas fa-question-circle"></i> Frage</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="button-card-actions">
+            <a href="{{ url_for('edit_button', button_id=button.id) }}" class="btn btn-sm btn-secondary">
+                <i class="fas fa-edit"></i> Bearbeiten
+            </a>
+            <form method="POST" action="{{ url_for('delete_button', button_id=button.id) }}" class="form-inline" onsubmit="return confirm('Button wirklich löschen?')">
+                <button type="submit" class="btn btn-sm btn-danger">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-page">
+    <div class="empty-icon">
+        <i class="fas fa-hand-pointer"></i>
+    </div>
+    <h3>Keine Buttons vorhanden</h3>
+    <p>Erstelle deinen ersten Button für ein Ticket-Panel.</p>
+    <button class="btn btn-primary" onclick="showModal('createButtonModal')">
+        <i class="fas fa-plus"></i> Button erstellen
+    </button>
+</div>
+{% endif %}
+
+<!-- Create Button Modal -->
+<div class="modal" id="createButtonModal">
+    <div class="modal-backdrop" onclick="hideModal('createButtonModal')"></div>
+    <div class="modal-content modal-lg">
+        <div class="modal-header">
+            <h3><i class="fas fa-plus"></i> Neuen Button erstellen</h3>
+            <button class="modal-close" onclick="hideModal('createButtonModal')">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form method="POST" action="{{ url_for('create_button') }}" enctype="multipart/form-data">
+            <div class="modal-body">
+                <div class="form-section">
+                    <h4><i class="fas fa-cog"></i> Grundeinstellungen</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="panel_id">Panel *</label>
+                            <select id="panel_id" name="panel_id" required>
+                                <option value="">Panel auswählen...</option>
+                                {% for panel in panels %}
+                                <option value="{{ panel.id }}">{{ panel.title }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="label">Beschriftung *</label>
+                            <input type="text" id="label" name="label" placeholder="z.B. Allgemeine Frage" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="emoji">Emoji</label>
+                            <input type="text" id="emoji" name="emoji" placeholder="z.B. ❓">
+                        </div>
+                        <div class="form-group">
+                            <label for="color">Farbe</label>
+                            <select id="color" name="color">
+                                <option value="blurple">Blau (Blurple)</option>
+                                <option value="grey">Grau</option>
+                                <option value="green">Grün</option>
+                                <option value="red">Rot</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="description">Beschreibung</label>
+                        <textarea id="description" name="description" rows="2" placeholder="Optionale Beschreibung für diesen Button..."></textarea>
+                    </div>
+                </div>
+                
+                <div class="form-section">
+                    <h4><i class="fas fa-sliders-h"></i> Ticket-Einstellungen</h4>
+                    <div class="form-group">
+                        <label for="category_id">Discord Kategorie ID</label>
+                        <input type="text" id="category_id" name="category_id" placeholder="ID des Discord-Kanals">
+                        <small>Die ID der Kategorie wo Tickets erstellt werden (Forum oder normale Kategorie)</small>
+                    </div>
+
+                    <!-- NEW: Multiple Support Roles with @mention UI -->
+                    <div class="form-group">
+                        <label><i class="fas fa-users"></i> Support-Rollen (mehrere möglich)</label>
+                        <div class="role-mention-input" id="create_roles_container">
+                            <div class="role-tags" id="create_roles_tags"></div>
+                            <input type="text" id="create_roles_input"
+                                   placeholder="Tippe @Rollenname, Rollen-ID oder Name und drücke Enter..."
+                                   autocomplete="off">
+                            <input type="hidden" name="support_role_ids" id="create_roles_hidden" value="">
+                            <input type="hidden" name="support_role_id" id="create_support_role_id" value="">
+                        </div>
+                        <small>
+                            Tippe <code>@Rollenname</code> oder eine Rollen-ID. 
+                            Mehrere Rollen mit Enter trennen. 
+                            <em>Leer lassen = Standard-Rollen aus den Einstellungen.</em>
+                        </small>
+                    </div>
+                    
+                    <div class="form-group" id="create_roles_dropdown_container" style="display:none;">
+                        <label><i class="fas fa-list"></i> Verfügbare Rollen (Klick zum Hinzufügen)</label>
+                        <div class="role-dropdown-list" id="create_roles_dropdown"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="max_tickets">Max. offene Tickets pro Person</label>
+                        <input type="number" id="max_tickets" name="max_tickets" value="3" min="1" max="99">
+                    </div>
+                </div>
+                
+                <div class="form-section">
+                    <h4><i class="fas fa-question-circle"></i> Vorfrage (Einfach)</h4>
+                    <div class="form-group checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="require_question" id="require_question">
+                            <span class="checkbox-custom"></span>
+                            Einfache Frage (ein einzelnes Feld)
+                        </label>
+                        <small>Aktiviere diese Option für eine einfache Frage</small>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="question_title">Frage-Titel</label>
+                            <input type="text" id="question_title" name="question_title" placeholder="z.B. Betreff">
+                        </div>
+                        <div class="form-group">
+                            <label for="question_placeholder">Platzhalter</label>
+                            <input type="text" id="question_placeholder" name="question_placeholder" placeholder="Beschreibe kurz dein Anliegen...">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-section">
+                    <h4><i class="fas fa-list"></i> Custom Modal (Pop-up)</h4>
+                    <div class="form-group checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="use_modal" id="use_modal" onchange="toggleModalFields()">
+                            <span class="checkbox-custom"></span>
+                            Custom Pop-up mit mehreren Feldern
+                        </label>
+                        <small>Aktiviere für ein Formular mit mehreren Feldern (z.B. für Bewerbungen)</small>
+                    </div>
+                    
+                    <div id="modal_fields_section" class="modal-fields-section hidden">
+                        <div class="form-group">
+                            <label for="modal_title">Modal-Titel</label>
+                            <input type="text" id="modal_title" name="modal_title" placeholder="Titel des Pop-up Fensters">
+                        </div>
+                        
+                        <div class="modal-fields-builder">
+                            <label><i class="fas fa-edit"></i> Formular-Felder</label>
+                            <p class="field-builder-hint">Füge Felder hinzu die im Pop-up angezeigt werden sollen</p>
+                            
+                            <div id="modal_fields_list" class="modal-fields-list">
+                                <div class="modal-field-item">
+                                    <div class="field-row">
+                                        <input type="text" name="field_label" placeholder="Feldname (z.B. Discord-Tag)" class="field-input">
+                                        <select name="field_style" class="field-input">
+                                            <option value="short">Kurztext</option>
+                                            <option value="paragraph">Langtext</option>
+                                        </select>
+                                        <input type="text" name="field_placeholder" placeholder="Platzhalter..." class="field-input">
+                                        <label class="field-required-toggle">
+                                            <input type="checkbox" name="field_required" checked>
+                                            <span>Pflichtfeld</span>
+                                        </label>
+                                        <button type="button" class="btn-remove-field" onclick="removeField(this)">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="addField()">
+                                <i class="fas fa-plus"></i> Feld hinzufügen
+                            </button>
+                        </div>
+                        
+                        <input type="hidden" name="modal_fields_json" id="modal_fields_json" value="[]">
+                    </div>
+                </div>
+                
+                <div class="form-section">
+                    <h4><i class="fas fa-image"></i> Button-Grafik (Optional)</h4>
+                    <p class="form-section-desc">Füge ein Bild hinzu das im Ticket-Panel angezeigt wird.</p>
+                    <div class="form-group">
+                        <label for="image_url">Bild-URL</label>
+                        <input type="url" id="image_url" name="image_url" placeholder="https://beispiel.de/bild.png">
+                        <small>URL zu einem Bild das im Panel angezeigt wird</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="image_file">Oder Bild hochladen</label>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="image_file" name="image_file" accept="image/*">
+                            <p class="file-hint">Unterstützte Formate: PNG, JPG, GIF, WEBP</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="hideModal('createButtonModal')">Abbrechen</button>
+                <button type="submit" class="btn btn-primary">Button erstellen</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let availableRoles = [];
+
+async function loadRoles() {
+    try {
+        const res = await fetch('/api/roles');
+        availableRoles = await res.json();
+        populateCreateRoleDropdown();
+    } catch (e) {
+        console.error('Failed to load roles:', e);
+    }
+}
+
+function populateCreateRoleDropdown() {
+    const dropdown = document.getElementById('create_roles_dropdown');
+    const container = document.getElementById('create_roles_dropdown_container');
+    if (!dropdown || !container) return;
+    
+    dropdown.innerHTML = '';
+    if (availableRoles.length === 0) {
+        dropdown.innerHTML = '<p class="role-dropdown-empty">Keine Rollen gefunden. Starte den Bot damit Rollen geladen werden.</p>';
+        container.style.display = 'block';
+        return;
+    }
+    
+    availableRoles.forEach(role => {
+        const item = document.createElement('div');
+        item.className = 'role-dropdown-item';
+        item.innerHTML = `<span class="role-color-dot" style="background:${role.role_color}"></span> @${role.role_name}`;
+        item.onclick = () => addCreateRoleTag(`@${role.role_name}`);
+        dropdown.appendChild(item);
+    });
+    container.style.display = 'block';
+}
+
+function initCreateRoles() {
+    const input = document.getElementById('create_roles_input');
+    if (!input) return;
+    
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const val = this.value.trim();
+            if (val) {
+                addCreateRoleTag(val);
+                this.value = '';
+            }
+        }
+    });
+}
+
+function addCreateRoleTag(roleText) {
+    const tagsContainer = document.getElementById('create_roles_tags');
+    const hidden = document.getElementById('create_roles_hidden');
+    
+    const current = hidden.value.split(',').map(r => r.trim()).filter(r => r);
+    if (current.includes(roleText)) return;
+    
+    const tag = document.createElement('span');
+    tag.className = 'role-tag';
+    tag.innerHTML = `<span class="role-tag-text">${roleText}</span><button type="button" class="role-tag-remove" onclick="removeCreateRoleTag(this)">&times;</button>`;
+    tag.dataset.role = roleText;
+    tagsContainer.appendChild(tag);
+    
+    updateCreateRolesHidden();
+}
+
+function removeCreateRoleTag(btn) {
+    btn.parentElement.remove();
+    updateCreateRolesHidden();
+}
+
+function updateCreateRolesHidden() {
+    const tags = document.querySelectorAll('#create_roles_tags .role-tag');
+    const roles = [];
+    tags.forEach(tag => roles.push(tag.dataset.role));
+    const joined = roles.join(',');
+    document.getElementById('create_roles_hidden').value = joined;
+    const legacy = document.getElementById('create_support_role_id');
+    if (legacy) legacy.value = roles.length > 0 ? roles[0] : '';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadRoles();
+    initCreateRoles();
+});
+</script>
+{% endblock %}

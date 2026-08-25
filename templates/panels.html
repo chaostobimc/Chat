@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+{% block title %}Panels - Ticket Bot Dashboard{% endblock %}
+{% block page_title %}Ticket Panels{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <p class="page-description">Verwalte deine Ticket-Panels. Panels sind die Hauptkomponenten die Tickets auf Discord erstellen.</p>
+    </div>
+    <div class="page-header-right">
+        <button class="btn btn-primary" onclick="showModal('createPanelModal')">
+            <i class="fas fa-plus"></i>
+            Neues Panel
+        </button>
+    </div>
+</div>
+
+{% if panels %}
+<div class="panels-list">
+    {% for panel in panels %}
+    <div class="panel-card">
+        <div class="panel-card-header">
+            <div class="panel-card-icon">
+                <i class="fas fa-layer-group"></i>
+            </div>
+            <div class="panel-card-info">
+                <h3>{{ panel.title }}</h3>
+                <p>{{ panel.description }}</p>
+            </div>
+            <div class="panel-card-stats">
+                <span class="badge">{{ panel.button_count }} Buttons</span>
+            </div>
+        </div>
+        
+        <div class="panel-card-footer">
+            <div class="panel-card-meta">
+                <span><i class="far fa-calendar"></i> {{ panel.created_at.strftime('%d.%m.%Y') if panel.created_at else 'N/A' }}</span>
+                {% if panel.message_id %}
+                <span class="status-active"><i class="fas fa-check-circle"></i> Aktiv</span>
+                {% else %}
+                <span class="status-inactive"><i class="fas fa-times-circle"></i> Nicht gesendet</span>
+                {% endif %}
+            </div>
+            <div class="panel-card-actions">
+                <button class="btn btn-sm btn-discord" onclick="openSendPanelModal({{ panel.id }}, '{{ panel.title|e }}')">
+                    <i class="fab fa-discord"></i> Panel Senden
+                </button>
+                <a href="{{ url_for('edit_panel', panel_id=panel.id) }}" class="btn btn-sm btn-secondary">
+                    <i class="fas fa-edit"></i> Bearbeiten
+                </a>
+                <form method="POST" action="{{ url_for('delete_panel', panel_id=panel.id) }}" class="form-inline" onsubmit="return confirm('Panel wirklich löschen? Dies löscht auch alle Buttons!')">
+                    <button type="submit" class="btn btn-sm btn-danger">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-page">
+    <div class="empty-icon">
+        <i class="fas fa-th-large"></i>
+    </div>
+    <h3>Keine Panels vorhanden</h3>
+    <p>Erstelle dein erstes Ticket-Panel um loszulegen.</p>
+    <button class="btn btn-primary" onclick="showModal('createPanelModal')">
+        <i class="fas fa-plus"></i> Panel erstellen
+    </button>
+</div>
+{% endif %}
+
+<!-- Create Panel Modal -->
+<div class="modal" id="createPanelModal">
+    <div class="modal-backdrop" onclick="hideModal('createPanelModal')"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-plus"></i> Neues Panel erstellen</h3>
+            <button class="modal-close" onclick="hideModal('createPanelModal')">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form method="POST" action="{{ url_for('create_panel') }}">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="title">Titel</label>
+                    <input type="text" id="title" name="title" value="Support Tickets" required>
+                </div>
+                <div class="form-group">
+                    <label for="description">Beschreibung</label>
+                    <textarea id="description" name="description" rows="3" placeholder="Beschreibe das Panel...">Wähle eine Kategorie für dein Anliegen</textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="hideModal('createPanelModal')">Abbrechen</button>
+                <button type="submit" class="btn btn-primary">Erstellen</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- NEW: Send Panel to Discord Modal -->
+<div class="modal" id="sendPanelModal">
+    <div class="modal-backdrop" onclick="hideModal('sendPanelModal')"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fab fa-discord" style="color: #5865F2;"></i> Panel an Discord senden</h3>
+            <button class="modal-close" onclick="hideModal('sendPanelModal')">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form method="POST" id="sendPanelForm" action="">
+            <div class="modal-body">
+                <div class="send-panel-info">
+                    <p><strong>Panel:</strong> <span id="sendPanelTitle"></span></p>
+                </div>
+                <div class="form-group">
+                    <label for="send_guild_id"><i class="fas fa-server"></i> Server (Guild)</label>
+                    <select id="send_guild_id" name="guild_id" onchange="onGuildChange()">
+                        <option value="">Server auswählen...</option>
+                        {% for gid in guilds %}
+                        <option value="{{ gid }}">{{ gid }}</option>
+                        {% endfor %}
+                    </select>
+                    <small>Wähle den Server, auf dem das Panel gesendet werden soll</small>
+                </div>
+                <div class="form-group">
+                    <label for="send_channel_id"><i class="fas fa-hashtag"></i> Kanal auswählen</label>
+                    <select id="send_channel_id" name="channel_id" required>
+                        <option value="">Erst Server auswählen...</option>
+                    </select>
+                    <small>Wähle den Kanal, in dem das Ticket-Panel erscheinen soll</small>
+                </div>
+                <div class="send-panel-hint">
+                    <i class="fas fa-info-circle"></i>
+                    Das Panel wird vom Bot automatisch gesendet, sobald er die Anfrage verarbeitet.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="hideModal('sendPanelModal')">Abbrechen</button>
+                <button type="submit" class="btn btn-discord">
+                    <i class="fas fa-paper-plane"></i> Panel senden
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Cached guild data
+let cachedChannels = {{ channels|tojson|safe }};
+let cachedRoles = {{ roles|tojson|safe }};
+
+function openSendPanelModal(panelId, panelTitle) {
+    document.getElementById('sendPanelForm').action = '/panels/' + panelId + '/send';
+    document.getElementById('sendPanelTitle').textContent = panelTitle;
+    
+    // If only one guild, preselect it
+    const guildSelect = document.getElementById('send_guild_id');
+    if (guildSelect.options.length === 2) {
+        guildSelect.selectedIndex = 1;
+        onGuildChange();
+    }
+    
+    showModal('sendPanelModal');
+}
+
+function onGuildChange() {
+    const guildId = document.getElementById('send_guild_id').value;
+    const channelSelect = document.getElementById('send_channel_id');
+    channelSelect.innerHTML = '<option value="">Kanal auswählen...</option>';
+    
+    if (!guildId) {
+        channelSelect.innerHTML = '<option value="">Erst Server auswählen...</option>';
+        return;
+    }
+    
+    const filtered = cachedChannels.filter(ch => ch.guild_id === guildId && (ch.channel_type === 'text' || ch.channel_type === 'forum'));
+    
+    // Group by category
+    const categories = {};
+    const uncategorized = [];
+    
+    filtered.forEach(ch => {
+        if (ch.category_name) {
+            if (!categories[ch.category_name]) categories[ch.category_name] = [];
+            categories[ch.category_name].push(ch);
+        } else {
+            uncategorized.push(ch);
+        }
+    });
+    
+    // Add uncategorized first
+    uncategorized.forEach(ch => {
+        const opt = document.createElement('option');
+        opt.value = ch.channel_id;
+        opt.textContent = '#' + ch.channel_name + (ch.channel_type === 'forum' ? ' 📋 Forum' : '');
+        channelSelect.appendChild(opt);
+    });
+    
+    // Add categorized
+    Object.keys(categories).sort().forEach(catName => {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = '📁 ' + catName;
+        categories[catName].forEach(ch => {
+            const opt = document.createElement('option');
+            opt.value = ch.channel_id;
+            opt.textContent = '#' + ch.channel_name + (ch.channel_type === 'forum' ? ' 📋 Forum' : '');
+            optgroup.appendChild(opt);
+        });
+        channelSelect.appendChild(optgroup);
+    });
+}
+</script>
+{% endblock %}

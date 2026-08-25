@@ -1,0 +1,390 @@
+{% extends "base.html" %}
+
+{% block title %}Button bearbeiten - Ticket Bot{% endblock %}
+{% block page_title %}Button bearbeiten{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <a href="{{ url_for('buttons_page') }}" class="back-link">
+            <i class="fas fa-arrow-left"></i> Zurück zu Buttons
+        </a>
+    </div>
+</div>
+
+<div class="edit-grid">
+    <div class="edit-main">
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-cog"></i> Button-Einstellungen</h3>
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="form-section">
+                        <h4><i class="fas fa-cog"></i> Grundeinstellungen</h4>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="label">Beschriftung *</label>
+                                <input type="text" id="label" name="label" value="{{ button.label }}" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="emoji">Emoji</label>
+                                <input type="text" id="emoji" name="emoji" value="{{ button.emoji or '' }}" placeholder="z.B. ❓">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="color">Farbe</label>
+                                <select id="color" name="color">
+                                    <option value="blurple" {% if button.color == 'blurple' %}selected{% endif %}>Blau (Blurple)</option>
+                                    <option value="grey" {% if button.color == 'grey' %}selected{% endif %}>Grau</option>
+                                    <option value="green" {% if button.color == 'green' %}selected{% endif %}>Grün</option>
+                                    <option value="red" {% if button.color == 'red' %}selected{% endif %}>Rot</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="panel_id">Panel</label>
+                                <select id="panel_id" name="panel_id">
+                                    {% for panel in panels %}
+                                    <option value="{{ panel.id }}" {% if panel.id == button.panel_id %}selected{% endif %}>{{ panel.title }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="description">Beschreibung</label>
+                            <textarea id="description" name="description" rows="3">{{ button.description or '' }}</textarea>
+                        </div>
+                    </div>
+                    
+                    <div class="form-section">
+                        <h4><i class="fas fa-sliders-h"></i> Ticket-Einstellungen</h4>
+                        <div class="form-group">
+                            <label for="category_id">Discord Kategorie ID</label>
+                            <input type="text" id="category_id" name="category_id" value="{{ button.category_id or '' }}">
+                            <small>Die ID der Kategorie wo Tickets erstellt werden (Forum oder normale Kategorie)</small>
+                        </div>
+
+                        <!-- NEW: Multiple Support Roles with @mention UI -->
+                        <div class="form-group">
+                            <label><i class="fas fa-users"></i> Support-Rollen (mehrere möglich)</label>
+                            <div class="role-mention-input" id="btn_roles_container">
+                                <div class="role-tags" id="btn_roles_tags"></div>
+                                <input type="text" id="btn_roles_input"
+                                       placeholder="Tippe @Rollenname, Rollen-ID oder Name und drücke Enter..."
+                                       autocomplete="off">
+                                <input type="hidden" name="support_role_ids" id="btn_roles_hidden"
+                                       value="{{ button.support_role_ids or '' }}">
+                                <!-- Keep legacy field in sync -->
+                                <input type="hidden" name="support_role_id" id="support_role_id" value="{{ button.support_role_id or '' }}">
+                            </div>
+                            <small>
+                                Tippe <code>@Rollenname</code> oder eine Rollen-ID um eine Rolle hinzuzufügen. 
+                                Mehrere Rollen mit Enter trennen. 
+                                <em>Leer lassen = Standard-Rollen aus den Einstellungen werden verwendet.</em>
+                            </small>
+                        </div>
+                        
+                        <!-- Available roles dropdown for button edit -->
+                        <div class="form-group" id="btn_roles_dropdown_container" style="display:none;">
+                            <label><i class="fas fa-list"></i> Verfügbare Rollen (Klick zum Hinzufügen)</label>
+                            <div class="role-dropdown-list" id="btn_roles_dropdown"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="max_tickets">Max. offene Tickets pro Person</label>
+                            <input type="number" id="max_tickets" name="max_tickets" value="{{ button.max_tickets or 3 }}" min="1" max="99">
+                        </div>
+                    </div>
+                    
+                    <div class="form-section">
+                        <h4><i class="fas fa-question-circle"></i> Vorfrage (Einfach)</h4>
+                        <div class="form-group checkbox-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="require_question" id="require_question" {% if button.require_question %}checked{% endif %}>
+                                <span class="checkbox-custom"></span>
+                                Einfache Frage (ein einzelnes Feld)
+                            </label>
+                            <small>Aktiviere diese Option für eine einfache Frage (ein Textfeld)</small>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="question_title">Frage-Titel</label>
+                                <input type="text" id="question_title" name="question_title" value="{{ button.question_title or '' }}" placeholder="z.B. Betreff">
+                            </div>
+                            <div class="form-group">
+                                <label for="question_placeholder">Platzhalter</label>
+                                <input type="text" id="question_placeholder" name="question_placeholder" value="{{ button.question_placeholder or '' }}" placeholder="Beschreibe kurz dein Anliegen...">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-section">
+                        <h4><i class="fas fa-list"></i> Custom Modal (Pop-up)</h4>
+                        <div class="form-group checkbox-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="use_modal" id="use_modal" {% if button.use_modal %}checked{% endif %} onchange="toggleModalFields()">
+                                <span class="checkbox-custom"></span>
+                                Custom Pop-up mit mehreren Feldern
+                            </label>
+                            <small>Aktiviere diese Option für ein Formular mit mehreren Feldern</small>
+                        </div>
+                        
+                        <div id="modal_fields_section" class="modal-fields-section {% if not button.use_modal %}hidden{% endif %}">
+                            <div class="form-group">
+                                <label for="modal_title">Modal-Titel</label>
+                                <input type="text" id="modal_title" name="modal_title" value="{{ button.modal_title or button.label or '' }}" placeholder="Titel des Pop-up Fensters">
+                            </div>
+                            
+                            <div class="modal-fields-builder">
+                                <label><i class="fas fa-edit"></i> Formular-Felder</label>
+                                <p class="field-builder-hint">Füge Felder hinzu die im Pop-up angezeigt werden sollen</p>
+                                
+                                <div id="modal_fields_list" class="modal-fields-list">
+                                    {% if button.modal_fields_parsed %}
+                                    {% for field in button.modal_fields_parsed %}
+                                    <div class="modal-field-item">
+                                        <div class="field-row">
+                                            <input type="text" name="field_label" value="{{ field.label }}" placeholder="Feldname (z.B. Discord-Tag)" class="field-input">
+                                            <select name="field_style" class="field-input">
+                                                <option value="short" {% if field.style == 'short' %}selected{% endif %}>Kurztext</option>
+                                                <option value="paragraph" {% if field.style == 'paragraph' %}selected{% endif %}>Langtext</option>
+                                            </select>
+                                            <input type="text" name="field_placeholder" value="{{ field.placeholder }}" placeholder="Platzhalter..." class="field-input">
+                                            <label class="field-required-toggle">
+                                                <input type="checkbox" name="field_required" {% if field.required %}checked{% endif %}>
+                                                <span>Pflichtfeld</span>
+                                            </label>
+                                            <button type="button" class="btn-remove-field" onclick="removeField(this)">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                    {% else %}
+                                    <div class="modal-field-item">
+                                        <div class="field-row">
+                                            <input type="text" name="field_label" placeholder="Feldname (z.B. Discord-Tag)" class="field-input">
+                                            <select name="field_style" class="field-input">
+                                                <option value="short">Kurztext</option>
+                                                <option value="paragraph">Langtext</option>
+                                            </select>
+                                            <input type="text" name="field_placeholder" placeholder="Platzhalter..." class="field-input">
+                                            <label class="field-required-toggle">
+                                                <input type="checkbox" name="field_required" checked>
+                                                <span>Pflichtfeld</span>
+                                            </label>
+                                            <button type="button" class="btn-remove-field" onclick="removeField(this)">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="addField()">
+                                    <i class="fas fa-plus"></i> Feld hinzufügen
+                                </button>
+                            </div>
+                            
+                            <input type="hidden" name="modal_fields_json" id="modal_fields_json" value="{{ button.modal_fields or '[]' }}">
+                        </div>
+                    </div>
+                    
+                    <div class="form-section">
+                        <h4><i class="fas fa-image"></i> Button-Grafik (Optional)</h4>
+                        <p class="form-section-desc">Füge ein Bild hinzu das im Ticket-Panel angezeigt wird.</p>
+                        
+                        {% if button.image_local or button.image_url %}
+                        <div class="current-image">
+                            <p class="image-label">Aktuelles Bild:</p>
+                            <div class="image-preview">
+                                <img src="{{ button.image_local or button.image_url }}" alt="Button Bild" class="preview-img">
+                                <label class="delete-image-label">
+                                    <input type="checkbox" name="delete_image" value="1">
+                                    <span class="checkbox-custom"></span>
+                                    Bild entfernen
+                                </label>
+                            </div>
+                        </div>
+                        {% endif %}
+                        
+                        <div class="image-upload-section">
+                            <div class="form-group">
+                                <label for="image_url">Bild-URL</label>
+                                <input type="url" id="image_url" name="image_url" value="{{ button.image_url or '' }}" placeholder="https://beispiel.de/bild.png">
+                                <small>Alternativ kannst du auch eine Bild-URL einfügen</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="image_file">Oder Bild hochladen</label>
+                                <div class="file-input-wrapper">
+                                    <input type="file" id="image_file" name="image_file" accept="image/*">
+                                    <p class="file-hint">Unterstützte Formate: PNG, JPG, GIF, WEBP</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Änderungen speichern
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="edit-sidebar">
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-eye"></i> Vorschau</h3>
+            </div>
+            <div class="card-body">
+                <div class="button-preview-container">
+                    <button class="preview-btn btn-lg btn-{{ button.color }}" id="buttonPreview">
+                        {% if button.emoji %}{{ button.emoji }} {% endif %}{{ button.label }}
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-info-circle"></i> Button-Info</h3>
+            </div>
+            <div class="card-body">
+                <div class="info-list">
+                    <div class="info-item">
+                        <span class="info-label">Button ID</span>
+                        <span class="info-value">#{{ button.id }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Custom ID</span>
+                        <span class="info-value code">{{ button.custom_id }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Max Tickets</span>
+                        <span class="info-value">{{ button.max_tickets }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Vorfrage</span>
+                        <span class="info-value">{% if button.require_question %}Ja{% else %}Nein{% endif %}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+let availableRoles = [];
+
+async function loadRoles() {
+    try {
+        const res = await fetch('/api/roles');
+        availableRoles = await res.json();
+        populateBtnRoleDropdown();
+    } catch (e) {
+        console.error('Failed to load roles:', e);
+    }
+}
+
+function populateBtnRoleDropdown() {
+    const dropdown = document.getElementById('btn_roles_dropdown');
+    const container = document.getElementById('btn_roles_dropdown_container');
+    if (!dropdown || !container) return;
+    
+    dropdown.innerHTML = '';
+    if (availableRoles.length === 0) {
+        dropdown.innerHTML = '<p class="role-dropdown-empty">Keine Rollen gefunden. Starte den Bot damit Rollen geladen werden.</p>';
+        container.style.display = 'block';
+        return;
+    }
+    
+    availableRoles.forEach(role => {
+        const item = document.createElement('div');
+        item.className = 'role-dropdown-item';
+        item.innerHTML = `<span class="role-color-dot" style="background:${role.role_color}"></span> @${role.role_name}`;
+        item.onclick = () => addBtnRoleTag(`@${role.role_name}`);
+        dropdown.appendChild(item);
+    });
+    container.style.display = 'block';
+}
+
+function initBtnRoles() {
+    const hidden = document.getElementById('btn_roles_hidden');
+    const input = document.getElementById('btn_roles_input');
+    if (!hidden || !input) return;
+    
+    // Parse existing roles (try support_role_ids first, then legacy support_role_id)
+    let existing = hidden.value ? hidden.value.split(',').filter(r => r.trim()) : [];
+    if (existing.length === 0) {
+        const legacy = document.getElementById('support_role_id');
+        if (legacy && legacy.value) {
+            existing = legacy.value.split(',').filter(r => r.trim());
+        }
+    }
+    existing.forEach(role => addBtnRoleTag(role.trim()));
+    
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const val = this.value.trim();
+            if (val) {
+                addBtnRoleTag(val);
+                this.value = '';
+            }
+        }
+    });
+}
+
+function addBtnRoleTag(roleText) {
+    const tagsContainer = document.getElementById('btn_roles_tags');
+    const hidden = document.getElementById('btn_roles_hidden');
+    
+    const current = hidden.value.split(',').map(r => r.trim()).filter(r => r);
+    if (current.includes(roleText)) return;
+    
+    const tag = document.createElement('span');
+    tag.className = 'role-tag';
+    tag.innerHTML = `<span class="role-tag-text">${roleText}</span><button type="button" class="role-tag-remove" onclick="removeBtnRoleTag(this)">&times;</button>`;
+    tag.dataset.role = roleText;
+    tagsContainer.appendChild(tag);
+    
+    updateBtnRolesHidden();
+}
+
+function removeBtnRoleTag(btn) {
+    btn.parentElement.remove();
+    updateBtnRolesHidden();
+}
+
+function updateBtnRolesHidden() {
+    const tags = document.querySelectorAll('#btn_roles_tags .role-tag');
+    const roles = [];
+    tags.forEach(tag => roles.push(tag.dataset.role));
+    const joined = roles.join(',');
+    document.getElementById('btn_roles_hidden').value = joined;
+    // Also sync to legacy field for backward compatibility
+    const legacy = document.getElementById('support_role_id');
+    if (legacy) legacy.value = roles.length > 0 ? roles[0] : '';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const labelInput = document.getElementById('label');
+    const previewBtn = document.getElementById('buttonPreview');
+    
+    if (labelInput && previewBtn) {
+        labelInput.addEventListener('input', function() {
+            previewBtn.textContent = '{{ button.emoji or "" }} ' + (this.value || 'Button Text');
+        });
+    }
+    
+    loadRoles();
+    initBtnRoles();
+});
+</script>
+{% endblock %}
+{% endblock %}
