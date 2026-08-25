@@ -343,17 +343,25 @@ def get_button_style(color_name: str) -> discord.ButtonStyle:
 
 
 class TicketPanelView(View):
-    def __init__(self, db: Database, guild_id: str):
+    def __init__(self, db: Database, guild_id: str, panel_id: int = None):
         super().__init__(timeout=None)
         self.db = db
         self.guild_id = guild_id
         self.panels = db.get_panels(guild_id)
+        self.panel_id = panel_id
         
     async def setup(self):
-        for panel in self.panels:
-            buttons = self.db.get_panel_buttons(panel['id'])
+        if self.panel_id:
+            # Load buttons only for specific panel
+            buttons = self.db.get_panel_buttons(self.panel_id)
             for btn in buttons:
                 self.add_item(TicketButton(self.db, btn))
+        else:
+            # Load buttons for all panels
+            for panel in self.panels:
+                buttons = self.db.get_panel_buttons(panel['id'])
+                for btn in buttons:
+                    self.add_item(TicketButton(self.db, btn))
 
 
 class TicketButton(Button):
@@ -673,13 +681,10 @@ async def on_ready():
 
 # ==================== SLASH COMMANDS ====================
 
-@client.tree.command(name="ticket-panel", description="Erstellt ein Ticket-Panel")
-@app_commands.describe(channel="Der Kanal für das Panel", title="Titel des Panels", panel_image="URL zu einem Bild für das Panel (optional)")
-async def create_panel(interaction: Interaction, channel: discord.TextChannel,
-                       title: str = "Support Tickets", 
-                       description: str = "Wähle eine Kategorie für dein Anliegen",
-                       panel_image: str = None):
-    """Create a new ticket panel."""
+@client.tree.command(name="ticket-send", description="Sendet ein Ticket-Panel aus dem Dashboard")
+@app_commands.describe(channel="Der Kanal für das Panel")
+async def send_panel(interaction: Interaction, channel: discord.TextChannel):
+    """Send a ticket panel from database to Discord."""
     
     if not interaction.user.guild_permissions.manage_guild:
         await interaction.response.send_message(
@@ -688,28 +693,47 @@ async def create_panel(interaction: Interaction, channel: discord.TextChannel,
         )
         return
     
-    panel_id = client.db.create_panel(str(interaction.guild.id), title, description)
+    # Get latest panel from database
+    panels = client.db.get_panels(str(interaction.guild.id))
+    if not panels:
+        await interaction.response.send_message(
+            "❌ Kein Panel im Dashboard gefunden. Erstelle zuerst ein Panel im Dashboard.",
+            ephemeral=True
+        )
+        return
     
-    view = TicketPanelView(client.db, str(interaction.guild.id))
+    panel = panels[0]
+    buttons = client.db.get_panel_buttons(panel['id'])
+    
+    # Create view with buttons for this panel
+    view = TicketPanelView(client.db, str(interaction.guild.id), panel['id'])
     await view.setup()
     
+    # Create embed
     embed = discord.Embed(
-        title=f"🎫 {title}",
-        description=description,
+        title=f"🎫 {panel['title']}",
+        description=panel['description'],
         color=discord.Color.blue()
     )
     
-    if panel_image:
-        embed.set_image(url=panel_image)
+    # Add button list to description
+    if buttons:
+        button_text = "\n".join([f"• **{b['label']}**" + (f" - {b['description']}" if b['description'] else "") for b in buttons])
+        embed.description = f"{panel['description']}\n\n{button_text}"
+    
+    if panel.get('image_url'):
+        embed.set_image(url=panel['image_url'])
     
     embed.set_footer(text="Klicke auf einen Button um ein Ticket zu erstellen.")
     
+    # Send message
     msg = await channel.send(embed=embed, view=view)
     
-    client.db.update_panel(panel_id, message_id=str(msg.id), channel_id=str(channel.id))
+    # Update panel with message info
+    client.db.update_panel(panel['id'], message_id=str(msg.id), channel_id=str(channel.id))
     
     await interaction.response.send_message(
-        f"✅ Ticket-Panel wurde in {channel.mention} erstellt!",
+        f"✅ Panel '{panel['title']}' wurde in {channel.mention} gesendet!",
         ephemeral=True
     )
 
