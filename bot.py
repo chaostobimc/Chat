@@ -13,12 +13,11 @@ from contextlib import contextmanager
 import discord
 from discord import (
     app_commands, 
-    TextInput,
     Interaction,
     ChannelType,
     PermissionOverwrite
 )
-from discord.ui import View, button, Button, Modal
+from discord.ui import View, button, Button, Modal, TextInput
 from discord.ext import tasks
 from dotenv import load_dotenv
 
@@ -489,45 +488,25 @@ class Database:
 def create_text_input(label: str, style=None, placeholder: str = None, 
                       required: bool = True, max_length: int = None, 
                       custom_id: str = None) -> TextInput:
-    """Create a TextInput compatible with any discord.py version."""
+    """Create a TextInput compatible with discord.ui.TextInput (discord.py 2.7+)."""
     if style is None:
         style = discord.TextStyle.short
     
-    kwargs = {}
+    # discord.py 2.7+: All parameters are keyword-only
+    kwargs = {
+        'label': label,
+        'style': style,
+        'required': required,
+    }
     
-    # Inspect TextInput.__init__ to determine the correct signature
-    import inspect
-    sig = inspect.signature(TextInput.__init__)
-    params = sig.parameters
-    
-    # Build kwargs based on what the signature accepts
-    if 'label' in params:
-        # Has explicit 'label' parameter (keyword or positional)
-        param = params['label']
-        if param.kind == inspect.Parameter.KEYWORD_ONLY:
-            kwargs['label'] = label
-            label_arg = None
-        else:
-            label_arg = label
-    else:
-        label_arg = label
-    
-    # Add optional parameters only if they exist in the signature
-    if 'style' in params:
-        kwargs['style'] = style
-    if 'placeholder' in params and placeholder is not None:
+    if placeholder is not None:
         kwargs['placeholder'] = placeholder
-    if 'required' in params:
-        kwargs['required'] = required
-    if 'max_length' in params and max_length is not None:
+    if max_length is not None:
         kwargs['max_length'] = max_length
-    if 'custom_id' in params and custom_id is not None:
+    if custom_id is not None:
         kwargs['custom_id'] = custom_id
     
-    if label_arg is not None:
-        return TextInput(label_arg, **kwargs)
-    else:
-        return TextInput(**kwargs)
+    return TextInput(**kwargs)
 
 
 # ==================== TICKET PANEL VIEW ====================
@@ -849,21 +828,50 @@ class CustomTicketModal(Modal):
 
 
 class TicketActionView(View):
-    def __init__(self, channel_id: str, user_id: str):
+    def __init__(self, channel_id: str = None, user_id: str = None):
         super().__init__(timeout=None)
         self.channel_id = channel_id
         self.user_id = user_id
     
     @button(style=discord.ButtonStyle.red, label="Schließen", emoji="🔒", custom_id="ticket_close")
     async def close_ticket(self, interaction: Interaction, button: Button):
-        await interaction.response.send_modal(
-            CloseTicketModal(self.channel_id, self.user_id)
-        )
+        # Use interaction data if available (persistent view after restart)
+        channel_id = self.channel_id or str(interaction.channel.id)
+        user_id = self.user_id or str(interaction.user.id)
+        
+        modal = CloseTicketModal(channel_id, user_id)
+        await interaction.response.send_modal(modal)
     
     @button(style=discord.ButtonStyle.grey, label="Transkript", emoji="📄", custom_id="ticket_transcript")
     async def transcript_ticket(self, interaction: Interaction, button: Button):
-        await interaction.response.send_message(
-            "⏳ Transkript wird erstellt...",
+        await interaction.response.defer(ephemeral=True)
+        
+        channel = interaction.channel
+        ticket = client.db.get_ticket_by_channel(str(channel.id))
+        
+        if not ticket:
+            await interaction.followup.send("❌ Kein Ticket gefunden.", ephemeral=True)
+            return
+        
+        transcript_content = []
+        async for msg in channel.history(limit=500, oldest_first=True):
+            timestamp = msg.created_at.strftime('%d.%m.%Y %H:%M')
+            content = msg.content or '[Kein Text]'
+            transcript_content.append(f"[{timestamp}] {msg.author}: {content}")
+        
+        transcript = "\n".join(transcript_content)
+        client.db.save_transcript(ticket['ticket_id'], transcript)
+        
+        # Send as file
+        import io
+        file = discord.File(
+            io.BytesIO(transcript.encode('utf-8')),
+            filename=f"transcript_{ticket['ticket_id']}.txt"
+        )
+        
+        await interaction.followup.send(
+            "📄 Transkript erstellt:",
+            file=file,
             ephemeral=True
         )
 
@@ -1039,15 +1047,28 @@ async def on_ready():
     print(f"📊 Geladen: {len(client.guilds)} Server")
     
     for guild in client.guilds:
+        # Register ticket panel views (persistent for sent panels)
         panels = client.db.get_panels(str(guild.id))
         for panel in panels:
             view = TicketPanelView(client.db, str(guild.id))
             await view.setup()
-            client.add_view(view, message_id=int(panel['message_id']) if panel['message_id'] else None)
-        # NEW: Sync guild channels and roles to DB for dashboard
+            if panel['message_id']:
+                try:
+                    client.add_view(view, message_id=int(panel['message_id']))
+                except Exception:
+                    client.add_view(view)
+            else:
+                client.add_view(view)
+        
+        # Sync guild channels and roles to DB for dashboard
         await client.sync_guild_data(guild)
 
-    # NEW: Start the panel send queue processor
+    # Register persistent TicketActionView for ticket close/transcript buttons
+    # This single registration covers ALL open tickets because the buttons use fixed custom_ids
+    persistent_ticket_view = TicketActionView("0", "0")
+    client.add_view(persistent_ticket_view)
+
+    # Start the panel send queue processor
     if not client.process_send_queue.is_running():
         client.process_send_queue.start()
 
