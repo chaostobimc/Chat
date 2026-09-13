@@ -221,7 +221,7 @@ def build_spawner_embed(db, guild_id: str) -> discord.Embed:
         # Build the price list
         lines = []
         for i, sp in enumerate(spawners, 1):
-            lines.append(f"**{i}.** {sp['name']} — `{sp['price']}$`")
+            lines.append(f"**{i}.** {sp['name']} — `{sp['price']}`")
 
         # Split into chunks if too long (Discord limit is 1024 per field)
         chunk = ""
@@ -314,7 +314,7 @@ def register_spawner_commands(client):
         existing = client.db.get_spawner_by_name(guild_id, name)
         if existing:
             await interaction.response.send_message(
-                f"⚠️ Spawner **{name}** existiert bereits mit dem Preis `{existing['price']}$`.\n"
+                f"⚠️ Spawner **{name}** existiert bereits mit dem Preis `{existing['price']}`.\n"
                 f"Nutze `/updateprice` um den Preis zu ändern.",
                 ephemeral=True
             )
@@ -327,7 +327,7 @@ def register_spawner_commands(client):
 
         embed = discord.Embed(
             title="✅ Spawner hinzugefügt",
-            description=f"**Name:** {name}\n**Preis:** `{preis}$`",
+            description=f"**Name:** {name}\n**Preis:** `{preis}`",
             color=discord.Color.green()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -408,8 +408,8 @@ def register_spawner_commands(client):
                         title="🔄 Preis aktualisiert!",
                         description=(
                             f"**Spawner:** {name}\n"
-                            f"**Alter Preis:** ~~`{old_price}$`~~\n"
-                            f"**Neuer Preis:** `{neuer_preis}$`\n"
+                            f"**Alter Preis:** ~~`{old_price}`~~\n"
+                            f"**Neuer Preis:** `{neuer_preis}`\n"
                             f"**Geändert von:** {interaction.user.mention}"
                         ),
                         color=discord.Color.gold()
@@ -423,8 +423,8 @@ def register_spawner_commands(client):
             title="✅ Preis aktualisiert",
             description=(
                 f"**Spawner:** {name}\n"
-                f"**Alter Preis:** ~~`{old_price}$`~~\n"
-                f"**Neuer Preis:** `{neuer_preis}$`"
+                f"**Alter Preis:** ~~`{old_price}`~~\n"
+                f"**Neuer Preis:** `{neuer_preis}`"
             ),
             color=discord.Color.green()
         )
@@ -593,7 +593,7 @@ def register_spawner_commands(client):
         )
 
         # List spawner that will be deleted
-        names = "\n".join([f"• {sp['name']} (`{sp['price']}$`)" for sp in spawners[:20]])
+        names = "\n".join([f"• {sp['name']} (`{sp['price']}`)" for sp in spawners[:20]])
         if len(spawners) > 20:
             names += f"\n• ... und {len(spawners) - 20} weitere"
         embed.add_field(name="Spawner die gelöscht werden:", value=names, inline=False)
@@ -692,7 +692,7 @@ def register_spawner_commands(client):
 
         lines = []
         for i, sp in enumerate(spawners, 1):
-            lines.append(f"**{i}.** {sp['name']} — `{sp['price']}$`")
+            lines.append(f"**{i}.** {sp['name']} — `{sp['price']}`")
 
         text = "\n".join(lines[:25])
         if len(spawners) > 25:
