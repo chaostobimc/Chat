@@ -176,6 +176,17 @@ class Database:
                     WHERE support_role_id IS NOT NULL AND support_role_id != ''
                 """)
 
+            # NEW: Spawner price list
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS spawners (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    price TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             conn.commit()
     
     def get_setting(self, key: str, default: Any = None) -> Any:
@@ -495,6 +506,60 @@ class Database:
             return legacy
         # Fallback to global default
         return self.get_default_support_roles() or ''
+
+    # ==================== NEW: SPAWNER PRICE LIST ====================
+
+    def add_spawner(self, guild_id: str, name: str, price: str) -> int:
+        """Add a spawner to the price list."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO spawners (guild_id, name, price) VALUES (?, ?, ?)",
+                (guild_id, name, price)
+            )
+            return cursor.lastrowid
+
+    def get_spawners(self, guild_id: str = None) -> List[Dict]:
+        """Get all spawners, optionally filtered by guild."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if guild_id:
+                cursor.execute(
+                    "SELECT * FROM spawners WHERE guild_id = ? ORDER BY name COLLATE NOCASE",
+                    (guild_id,)
+                )
+            else:
+                cursor.execute("SELECT * FROM spawners ORDER BY name COLLATE NOCASE")
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_spawner_by_name(self, guild_id: str, name: str) -> Optional[Dict]:
+        """Get a spawner by name (case-insensitive)."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM spawners WHERE guild_id = ? AND LOWER(name) = LOWER(?)",
+                (guild_id, name)
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def update_spawner_price(self, guild_id: str, name: str, new_price: str):
+        """Update the price of a spawner."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE spawners SET price = ? WHERE guild_id = ? AND LOWER(name) = LOWER(?)",
+                (new_price, guild_id, name)
+            )
+
+    def remove_spawner(self, guild_id: str, name: str):
+        """Remove a spawner from the price list."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM spawners WHERE guild_id = ? AND LOWER(name) = LOWER(?)",
+                (guild_id, name)
+            )
 
 
 def create_text_input(label: str, style=None, placeholder: str = None, 
@@ -1332,6 +1397,11 @@ async def on_ready():
     persistent_ticket_view = TicketActionView("0", "0")
     client.add_view(persistent_ticket_view)
 
+    # Register persistent SpawnerTradeView for buy/sell buttons
+    for guild in client.guilds:
+        spawner_view = SpawnerTradeView(client.db, str(guild.id))
+        client.add_view(spawner_view)
+
     # Start the panel send queue processor
     if not client.process_send_queue.is_running():
         client.process_send_queue.start()
@@ -1626,6 +1696,14 @@ async def delete_panel(interaction: Interaction, panel_id: int):
         "✅ Panel wurde gelöscht.",
         ephemeral=True
     )
+
+
+# ==================== SPAWNER COMMANDS ====================
+
+from spawner import register_spawner_commands, SpawnerTradeView
+
+# Register all spawner commands
+register_spawner_commands(client)
 
 
 # ==================== MAIN ====================
