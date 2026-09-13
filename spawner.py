@@ -13,6 +13,67 @@ from typing import Optional, Dict, List
 from utils import is_admin
 
 
+def parse_price(price_input: str) -> str:
+    """
+    Parse a price string with optional suffixes into a formatted number string.
+    Supports: K (thousand), M (million), B (billion), T (trillion)
+    Examples: '5M' -> '5.000.000', '500K' -> '500.000', '1.5M' -> '1.500.000'
+    """
+    text = price_input.strip().replace(' ', '').replace('$', '').replace('€', '')
+
+    suffixes = {
+        'k': 1_000,
+        'm': 1_000_000,
+        'b': 1_000_000_000,
+        't': 1_000_000_000_000,
+    }
+
+    multiplier = 1
+    for suffix, mult in suffixes.items():
+        if text.lower().endswith(suffix):
+            text = text[:-1]
+            multiplier = mult
+            break
+
+    # Smart decimal detection:
+    # If suffix is used (K/M/B/T), treat . and , as decimal separator
+    # If no suffix, check if . or , looks like thousands separator
+    if multiplier > 1:
+        # With suffix: . and , are always decimal separators
+        clean = text.replace('.', '').replace(',', '.')
+        # But if there were multiple dots (like 1.000.000), they were thousands separators
+        if text.count('.') > 1:
+            clean = text.replace('.', '').replace(',', '.')
+        elif text.count(',') > 1:
+            clean = text.replace(',', '')
+        else:
+            clean = text.replace('.', '.').replace(',', '.')
+    else:
+        # Without suffix: try to detect format
+        # "1.000.000" -> dots are thousands separators
+        # "1,5" -> comma is decimal separator (German)
+        # "1.5" -> dot is decimal separator (English)
+        if text.count('.') > 1:
+            # Multiple dots = thousands separators (1.000.000)
+            clean = text.replace('.', '').replace(',', '.')
+        elif text.count(',') > 1:
+            # Multiple commas = thousands separators (1,000,000)
+            clean = text.replace(',', '')
+        else:
+            # Single . or , = decimal separator
+            clean = text.replace(',', '.')
+
+    try:
+        value = float(clean) * multiplier
+        if value == int(value):
+            value = int(value)
+            return f"{value:,}".replace(",", ".")
+        else:
+            return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except (ValueError, TypeError):
+        return price_input  # Return as-is if not parseable
+
+
 # ==================== SPAWNER VIEWS ====================
 
 class SpawnerTradeView(View):
@@ -221,17 +282,7 @@ def build_spawner_embed(db, guild_id: str) -> discord.Embed:
         # Build the price list
         lines = []
         for i, sp in enumerate(spawners, 1):
-            price_str = sp['price']
-            # Try to format as number
-            try:
-                price_val = float(price_str)
-                if price_val == int(price_val):
-                    price_str = f"{int(price_val):,}".replace(",", ".")
-                else:
-                    price_str = f"{price_val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            except (ValueError, TypeError):
-                pass
-            lines.append(f"**{i}.** {sp['name']} — `{price_str}$`")
+            lines.append(f"**{i}.** {sp['name']} — `{sp['price']}$`")
 
         # Split into chunks if too long (Discord limit is 1024 per field)
         chunk = ""
@@ -330,14 +381,14 @@ def register_spawner_commands(client):
             )
             return
 
-        client.db.add_spawner(guild_id, name, preis)
+        client.db.add_spawner(guild_id, name, parse_price(preis))
 
         # Update sent message if exists
         await update_spawner_message(client.db, interaction.guild)
 
         embed = discord.Embed(
             title="✅ Spawner hinzugefügt",
-            description=f"**Name:** {name}\n**Preis:** `{preis}$`",
+            description=f"**Name:** {name}\n**Preis:** `{parse_price(preis)}$`",
             color=discord.Color.green()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -403,7 +454,8 @@ def register_spawner_commands(client):
             return
 
         old_price = existing['price']
-        client.db.update_spawner_price(guild_id, name, neuer_preis)
+        parsed_price = parse_price(neuer_preis)
+        client.db.update_spawner_price(guild_id, name, parsed_price)
 
         # Update sent message
         await update_spawner_message(client.db, interaction.guild)
@@ -419,7 +471,7 @@ def register_spawner_commands(client):
                         description=(
                             f"**Spawner:** {name}\n"
                             f"**Alter Preis:** ~~`{old_price}$`~~\n"
-                            f"**Neuer Preis:** `{neuer_preis}$`\n"
+                            f"**Neuer Preis:** `{parsed_price}$`\n"
                             f"**Geändert von:** {interaction.user.mention}"
                         ),
                         color=discord.Color.gold()
@@ -434,7 +486,7 @@ def register_spawner_commands(client):
             description=(
                 f"**Spawner:** {name}\n"
                 f"**Alter Preis:** ~~`{old_price}$`~~\n"
-                f"**Neuer Preis:** `{neuer_preis}$`"
+                f"**Neuer Preis:** `{parsed_price}$`"
             ),
             color=discord.Color.green()
         )
