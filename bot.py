@@ -564,6 +564,13 @@ class Database:
                 (guild_id, name)
             )
 
+    def clear_spawners(self, guild_id: str) -> int:
+        """Remove ALL spawners for a guild. Returns count of deleted rows."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM spawners WHERE guild_id = ?", (guild_id,))
+            return cursor.rowcount
+
 
 def create_text_input(label: str, style=None, placeholder: str = None, 
                       required: bool = True, max_length: int = None, 

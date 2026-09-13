@@ -571,3 +571,267 @@ def register_spawner_commands(client):
             f"✅ Kategorie für Spawner-Trade-Tickets wurde auf **{category.name}** gesetzt.",
             ephemeral=True
         )
+
+    @client.tree.command(name="clearspawners", description="Löscht ALLE Spawner aus der Preisliste")
+    async def clear_all_spawners(interaction: Interaction):
+        if not is_admin(interaction.user.id):
+            await interaction.response.send_message(
+                "❌ Du hast keine Berechtigung dafür.",
+                ephemeral=True
+            )
+            return
+
+        guild_id = str(interaction.guild.id)
+        spawners = client.db.get_spawners(guild_id)
+
+        if not spawners:
+            await interaction.response.send_message(
+                "ℹ️ Es gibt keine Spawner zum Löschen.",
+                ephemeral=True
+            )
+            return
+
+        # Show confirmation with buttons
+        confirm_view = ConfirmClearView(client.db, interaction.user.id, guild_id)
+        embed = discord.Embed(
+            title="⚠️ Alle Spawner löschen?",
+            description=(
+                f"Du bist dabei **{len(spawners)} Spawner** unwiderruflich zu löschen.\n\n"
+                "Dies kann nicht rückgängig gemacht werden!"
+            ),
+            color=discord.Color.red()
+        )
+
+        # List spawner that will be deleted
+        names = "\n".join([f"• {sp['name']} (`{sp['price']}$`)" for sp in spawners[:20]])
+        if len(spawners) > 20:
+            names += f"\n• ... und {len(spawners) - 20} weitere"
+        embed.add_field(name="Spawner die gelöscht werden:", value=names, inline=False)
+
+        await interaction.response.send_message(embed=embed, view=confirm_view, ephemeral=True)
+        await confirm_view.wait()
+
+    @client.tree.command(name="clearspawnertext", description="Entfernt den Header-Text über der Preisliste")
+    async def clear_spawner_text(interaction: Interaction):
+        if not is_admin(interaction.user.id):
+            await interaction.response.send_message(
+                "❌ Du hast keine Berechtigung dafür.",
+                ephemeral=True
+            )
+            return
+
+        current_text = client.db.get_setting('spawner_header_text', '')
+        if not current_text:
+            await interaction.response.send_message(
+                "ℹ️ Es ist kein Header-Text gesetzt.",
+                ephemeral=True
+            )
+            return
+
+        client.db.set_setting('spawner_header_text', '')
+        await update_spawner_message(client.db, interaction.guild)
+
+        embed = discord.Embed(
+            title="🗑️ Header-Text entfernt",
+            description="Der Text über der Spawner-Preisliste wurde gelöscht.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @client.tree.command(name="deletespawnerlist", description="Löscht die gesendete Preisliste aus dem Discord-Kanal")
+    async def delete_spawner_list_message(interaction: Interaction):
+        if not is_admin(interaction.user.id):
+            await interaction.response.send_message(
+                "❌ Du hast keine Berechtigung dafür.",
+                ephemeral=True
+            )
+            return
+
+        channel_id = client.db.get_setting('spawner_list_channel_id', '')
+        message_id = client.db.get_setting('spawner_list_message_id', '')
+
+        if not channel_id or not message_id:
+            await interaction.response.send_message(
+                "ℹ️ Es wurde keine Preisliste gesendet.",
+                ephemeral=True
+            )
+            return
+
+        try:
+            channel = interaction.guild.get_channel(int(channel_id))
+            if channel:
+                message = await channel.fetch_message(int(message_id))
+                await message.delete()
+        except Exception as e:
+            print(f"⚠️ Could not delete message (already deleted?): {e}")
+
+        # Clear stored IDs
+        client.db.set_setting('spawner_list_channel_id', '')
+        client.db.set_setting('spawner_list_message_id', '')
+
+        embed = discord.Embed(
+            title="🗑️ Preisliste gelöscht",
+            description="Die Spawner-Preisliste wurde aus dem Kanal entfernt.\nDie Spawner-Daten bleiben erhalten.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @client.tree.command(name="spawnerlist", description="Zeigt alle Spawner in der Datenbank an")
+    async def list_spawners(interaction: Interaction):
+        if not is_admin(interaction.user.id):
+            await interaction.response.send_message(
+                "❌ Du hast keine Berechtigung dafür.",
+                ephemeral=True
+            )
+            return
+
+        guild_id = str(interaction.guild.id)
+        spawners = client.db.get_spawners(guild_id)
+
+        if not spawners:
+            await interaction.response.send_message(
+                "ℹ️ Es sind keine Spawner in der Datenbank.",
+                ephemeral=True
+            )
+            return
+
+        embed = discord.Embed(
+            title=f"📋 Alle Spawner ({len(spawners)})",
+            color=discord.Color.blue()
+        )
+
+        lines = []
+        for i, sp in enumerate(spawners, 1):
+            lines.append(f"**{i}.** {sp['name']} — `{sp['price']}$`")
+
+        text = "\n".join(lines[:25])
+        if len(spawners) > 25:
+            text += f"\n\n*... und {len(spawners) - 25} weitere*"
+
+        embed.description = text
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @client.tree.command(name="spawnerreset", description="Setzt alles zurück: Alle Spawner, Text und die gesendete Liste")
+    async def reset_all_spawner_data(interaction: Interaction):
+        if not is_admin(interaction.user.id):
+            await interaction.response.send_message(
+                "❌ Du hast keine Berechtigung dafür.",
+                ephemeral=True
+            )
+            return
+
+        guild_id = str(interaction.guild.id)
+
+        # Show confirmation
+        confirm_view = ConfirmResetView(client.db, interaction.user.id, guild_id, interaction.guild)
+        embed = discord.Embed(
+            title="⚠️ Alles zurücksetzen?",
+            description=(
+                "Dies wird **alles** löschen:\n"
+                "• Alle Spawner aus der Datenbank\n"
+                "• Den Header-Text\n"
+                "• Die gesendete Preisliste im Kanal\n\n"
+                "**Dies kann nicht rückgängig gemacht werden!**"
+            ),
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, view=confirm_view, ephemeral=True)
+        await confirm_view.wait()
+
+
+class ConfirmClearView(View):
+    """Confirmation view for clearing all spawners."""
+
+    def __init__(self, db, user_id: int, guild_id: str):
+        super().__init__(timeout=30)
+        self.db = db
+        self.user_id = user_id
+        self.guild_id = guild_id
+
+    @button(style=discord.ButtonStyle.red, label="Ja, alle löschen", emoji="🗑️", custom_id="confirm_clear_yes")
+    async def confirm_yes(self, interaction: Interaction, btn: Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Nur der Ersteller kann das bestätigen.", ephemeral=True)
+            return
+
+        count = len(self.db.get_spawners(self.guild_id))
+        self.db.clear_spawners(self.guild_id)
+
+        for child in self.children:
+            child.disabled = True
+        btn.label = f"✅ {count} Spawner gelöscht!"
+
+        await interaction.response.edit_message(view=self)
+        self.stop()
+
+    @button(style=discord.ButtonStyle.grey, label="Abbrechen", emoji="❌", custom_id="confirm_clear_no")
+    async def confirm_no(self, interaction: Interaction, btn: Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Nur der Ersteller kann das abbrechen.", ephemeral=True)
+            return
+
+        for child in self.children:
+            child.disabled = True
+        btn.label = "❌ Abgebrochen"
+
+        await interaction.response.edit_message(view=self)
+        self.stop()
+
+
+class ConfirmResetView(View):
+    """Confirmation view for full spawner reset."""
+
+    def __init__(self, db, user_id: int, guild_id: str, guild):
+        super().__init__(timeout=30)
+        self.db = db
+        self.user_id = user_id
+        self.guild_id = guild_id
+        self.guild = guild
+
+    @button(style=discord.ButtonStyle.red, label="Ja, alles zurücksetzen", emoji="💣", custom_id="confirm_reset_yes")
+    async def confirm_yes(self, interaction: Interaction, btn: Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Nur der Ersteller kann das bestätigen.", ephemeral=True)
+            return
+
+        # Delete all spawners
+        self.db.clear_spawners(self.guild_id)
+
+        # Clear header text
+        self.db.set_setting('spawner_header_text', '')
+
+        # Delete sent message
+        channel_id = self.db.get_setting('spawner_list_channel_id', '')
+        message_id = self.db.get_setting('spawner_list_message_id', '')
+        if channel_id and message_id:
+            try:
+                channel = self.guild.get_channel(int(channel_id))
+                if channel:
+                    message = await channel.fetch_message(int(message_id))
+                    await message.delete()
+            except Exception:
+                pass
+
+        # Clear stored IDs
+        self.db.set_setting('spawner_list_channel_id', '')
+        self.db.set_setting('spawner_list_message_id', '')
+
+        for child in self.children:
+            child.disabled = True
+        btn.label = "✅ Alles zurückgesetzt!"
+
+        await interaction.response.edit_message(view=self)
+        self.stop()
+
+    @button(style=discord.ButtonStyle.grey, label="Abbrechen", emoji="❌", custom_id="confirm_reset_no")
+    async def confirm_no(self, interaction: Interaction, btn: Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Nur der Ersteller kann das abbrechen.", ephemeral=True)
+            return
+
+        for child in self.children:
+            child.disabled = True
+        btn.label = "❌ Abgebrochen"
+
+        await interaction.response.edit_message(view=self)
+        self.stop()
