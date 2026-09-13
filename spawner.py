@@ -10,7 +10,7 @@ from discord.ui import View, Button, button
 from datetime import datetime
 from typing import Optional, Dict, List
 
-from bot import is_admin
+from utils import is_admin
 
 
 # ==================== SPAWNER VIEWS ====================
