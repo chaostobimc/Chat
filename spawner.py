@@ -253,7 +253,7 @@ def build_spawner_embed(db, guild_id: str) -> discord.Embed:
 
 
 async def update_spawner_message(db, guild: discord.Guild):
-    """Update the sent spawner list message in Discord."""
+    """Update the sent spawner list message in Discord (runs in background)."""
     channel_id = db.get_setting('spawner_list_channel_id', '')
     message_id = db.get_setting('spawner_list_message_id', '')
 
@@ -271,8 +271,13 @@ async def update_spawner_message(db, guild: discord.Guild):
         await message.edit(embed=embed, view=view)
         return True
     except Exception as e:
-        print(f"❌ Error updating spawner message: {e}")
+        logger.warning(f"Error updating spawner message: {e}")
         return False
+
+
+def schedule_update_spawner_message(db, guild: discord.Guild):
+    """Schedule update_spawner_message as a background task (non-blocking)."""
+    asyncio.create_task(update_spawner_message(db, guild))
 
 
 async def spawner_name_autocomplete(interaction: Interaction, current: str) -> List[app_commands.Choice]:
@@ -328,7 +333,7 @@ def register_spawner_commands(client):
         client.db.add_spawner(guild_id, name, preis)
 
         # Update sent message if exists
-        await update_spawner_message(client.db, interaction.guild)
+        schedule_update_spawner_message(client.db, interaction.guild)
 
         embed = discord.Embed(
             title="✅ Spawner hinzugefügt",
@@ -405,7 +410,7 @@ def register_spawner_commands(client):
         client.db.update_spawner_price(guild_id, name, neuer_preis)
 
         # Update sent message
-        await update_spawner_message(client.db, interaction.guild)
+        schedule_update_spawner_message(client.db, interaction.guild)
 
         # Send price update notification to the spawner channel
         channel_id = client.db.get_setting('spawner_list_channel_id', '')
@@ -463,7 +468,7 @@ def register_spawner_commands(client):
             return
 
         client.db.remove_spawner(guild_id, name)
-        await update_spawner_message(client.db, interaction.guild)
+        schedule_update_spawner_message(client.db, interaction.guild)
 
         embed = discord.Embed(
             title="🗑️ Spawner entfernt",
@@ -547,7 +552,7 @@ def register_spawner_commands(client):
 
         if view.result == 'confirm':
             # Update the sent spawner message
-            await update_spawner_message(client.db, interaction.guild)
+            schedule_update_spawner_message(client.db, interaction.guild)
             await interaction.followup.send(
                 "✅ Text wurde übernommen und die Spawner-Liste aktualisiert!",
                 ephemeral=True
@@ -638,7 +643,7 @@ def register_spawner_commands(client):
             return
 
         client.db.set_setting('spawner_header_text', '')
-        await update_spawner_message(client.db, interaction.guild)
+        schedule_update_spawner_message(client.db, interaction.guild)
 
         embed = discord.Embed(
             title="🗑️ Header-Text entfernt",

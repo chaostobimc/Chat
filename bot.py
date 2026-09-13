@@ -9,6 +9,7 @@ import sys
 import json
 import sqlite3
 import logging
+import asyncio
 import traceback
 from datetime import datetime
 from typing import Optional, Dict, Any, List
@@ -775,7 +776,6 @@ async def generate_ticket_pdf(channel: discord.TextChannel, ticket_data: Dict, c
         pdf.set_text_color(50, 50, 50)
         
         if msg.content:
-            # Word wrap long messages
             content = msg.content
             pdf.multi_cell(0, 5, content)
         elif msg.attachments:
@@ -801,6 +801,36 @@ async def generate_ticket_pdf(channel: discord.TextChannel, ticket_data: Dict, c
     pdf.output(pdf_bytes)
     pdf_bytes.seek(0)
     return pdf_bytes
+
+
+async def send_pdf_to_log_channel(db, channel, ticket, closed_by, reason):
+    """Generate PDF and send to log channel (designed to run as background task)."""
+    try:
+        pdf_bytes = await generate_ticket_pdf(channel, ticket, closed_by, reason)
+        pdf_filename = f"transcript_{ticket.get('ticket_id', 'unknown')}.pdf"
+        pdf_file = discord.File(pdf_bytes, filename=pdf_filename)
+        
+        log_channel_id = db.get_setting('log_channel_id', '')
+        if log_channel_id:
+            log_channel = channel.guild.get_channel(int(log_channel_id))
+            if log_channel:
+                log_embed = discord.Embed(
+                    title="📋 Ticket Transkript",
+                    description=(
+                        f"**Ticket:** `{ticket.get('ticket_id', 'Unknown')}`\n"
+                        f"**Benutzer:** <@{ticket.get('user_id', 'Unknown')}>\n"
+                        f"**Kanal:** #{channel.name}\n"
+                        f"**Geschlossen von:** {closed_by.mention}\n"
+                        f"**Grund:** {reason}"
+                    ),
+                    color=discord.Color.blue()
+                )
+                log_embed.timestamp = datetime.now()
+                log_embed.set_footer(text=f"Geschlossen am {datetime.now().strftime('%d.%m.%Y um %H:%M')}")
+                await log_channel.send(embed=log_embed, file=pdf_file)
+                logger.info(f"PDF transcript sent for {ticket.get('ticket_id')}")
+    except Exception as e:
+        logger.error(f"Error generating/sending PDF: {e}")
 
 
 class TicketPanelView(View):
@@ -1226,40 +1256,8 @@ class CloseTicketModal(Modal, title="Ticket schließen"):
         except Exception:
             pass
         
-        # Generate PDF transcript
-        try:
-            pdf_bytes = await generate_ticket_pdf(channel, ticket, interaction.user, reason)
-            pdf_filename = f"transcript_{ticket.get('ticket_id', 'unknown')}.pdf"
-            pdf_file = discord.File(pdf_bytes, filename=pdf_filename)
-            
-            # Send PDF to log channel
-            log_channel_id = client.db.get_setting('log_channel_id', '')
-            if log_channel_id:
-                try:
-                    log_channel = interaction.guild.get_channel(int(log_channel_id))
-                    if log_channel:
-                        log_embed = discord.Embed(
-                            title="📋 Ticket Transkript",
-                            description=(
-                                f"**Ticket:** `{ticket.get('ticket_id', 'Unknown')}`\n"
-                                f"**Benutzer:** <@{ticket.get('user_id', 'Unknown')}>\n"
-                                f"**Kanal:** #{channel.name}\n"
-                                f"**Geschlossen von:** {interaction.user.mention}\n"
-                                f"**Grund:** {reason}"
-                            ),
-                            color=discord.Color.blue()
-                        )
-                        log_embed.timestamp = datetime.now()
-                        log_embed.set_footer(text=f"Geschlossen am {datetime.now().strftime('%d.%m.%Y um %H:%M')}")
-                        
-                        await log_channel.send(embed=log_embed, file=pdf_file)
-                        print(f"📄 PDF transcript sent to log channel for {ticket.get('ticket_id')}")
-                except Exception as e:
-                    print(f"❌ Error sending PDF to log channel: {e}")
-            else:
-                print("⚠️ No log channel configured. Set 'log_channel_id' in dashboard settings.")
-        except Exception as e:
-            print(f"❌ Error generating PDF transcript: {e}")
+        # Generate PDF transcript in background (non-blocking)
+        asyncio.create_task(send_pdf_to_log_channel(client.db, channel, ticket, interaction.user, reason))
         
         # Confirm to user
         await interaction.followup.send(
@@ -1337,7 +1335,7 @@ class TicketBot(discord.Client):
                 await view.setup()
                 self.add_view(view)
             # NEW: Sync guild channels and roles to DB for dashboard
-            await self.sync_guild_data(guild)
+            asyncio.create_task(self.sync_guild_data(guild))
 
     async def sync_guild_data(self, guild: discord.Guild):
         """Sync guild channels and roles to the database for the dashboard."""
@@ -1477,7 +1475,7 @@ async def on_ready():
                 client.add_view(view)
         
         # Sync guild channels and roles to DB for dashboard
-        await client.sync_guild_data(guild)
+        asyncio.create_task(client.sync_guild_data(guild))
 
     # Register persistent TicketActionView for ticket close/transcript buttons
     # This single registration covers ALL open tickets because the buttons use fixed custom_ids
@@ -1698,30 +1696,8 @@ async def close_ticket(interaction: Interaction, reason: str = None):
     except Exception:
         pass
     
-    # Generate and send PDF to log channel
-    try:
-        pdf_bytes = await generate_ticket_pdf(channel, ticket, user, reason)
-        pdf_file = discord.File(pdf_bytes, filename=f"transcript_{ticket['ticket_id']}.pdf")
-        
-        log_channel_id = client.db.get_setting('log_channel_id', '')
-        if log_channel_id:
-            log_channel = interaction.guild.get_channel(int(log_channel_id))
-            if log_channel:
-                log_embed = discord.Embed(
-                    title="📋 Ticket Transkript",
-                    description=(
-                        f"**Ticket:** `{ticket['ticket_id']}`\n"
-                        f"**Benutzer:** <@{ticket['user_id']}>\n"
-                        f"**Kanal:** #{channel.name}\n"
-                        f"**Geschlossen von:** {user.mention}\n"
-                        f"**Grund:** {reason}"
-                    ),
-                    color=discord.Color.blue()
-                )
-                log_embed.timestamp = datetime.now()
-                await log_channel.send(embed=log_embed, file=pdf_file)
-    except Exception as e:
-        print(f"❌ Error generating/sending PDF: {e}")
+    # Generate and send PDF to log channel (background, non-blocking)
+    asyncio.create_task(send_pdf_to_log_channel(client.db, channel, ticket, user, reason))
     
     await interaction.followup.send(
         "✅ Ticket geschlossen. Kanal wird in 5 Sekunden gelöscht.",
