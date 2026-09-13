@@ -10,6 +10,8 @@ from discord.ui import View, Button, button
 from datetime import datetime
 from typing import Optional, Dict, List
 
+from bot import is_admin
+
 
 # ==================== SPAWNER VIEWS ====================
 
@@ -309,7 +311,7 @@ def register_spawner_commands(client):
         preis="Preis des Spawners (z.B. 500000 oder 500k)"
     )
     async def add_spawner(interaction: Interaction, name: str, preis: str):
-        if not interaction.user.guild_permissions.manage_guild:
+        if not is_admin(interaction.user.id):
             await interaction.response.send_message(
                 "❌ Du hast keine Berechtigung dafür.",
                 ephemeral=True
@@ -343,7 +345,7 @@ def register_spawner_commands(client):
     @client.tree.command(name="sendspawner", description="Sendet die Spawner-Preisliste in einen Kanal")
     @app_commands.describe(channel="Der Kanal für die Preisliste")
     async def send_spawner_list(interaction: Interaction, channel: discord.TextChannel):
-        if not interaction.user.guild_permissions.manage_guild:
+        if not is_admin(interaction.user.id):
             await interaction.response.send_message(
                 "❌ Du hast keine Berechtigung dafür.",
                 ephemeral=True
@@ -381,7 +383,7 @@ def register_spawner_commands(client):
     )
     @app_commands.autocomplete(name=spawner_name_autocomplete)
     async def update_price(interaction: Interaction, name: str, neuer_preis: str):
-        if not interaction.user.guild_permissions.manage_guild:
+        if not is_admin(interaction.user.id):
             await interaction.response.send_message(
                 "❌ Du hast keine Berechtigung dafür.",
                 ephemeral=True
@@ -442,7 +444,7 @@ def register_spawner_commands(client):
     @app_commands.describe(name="Name des Spawners")
     @app_commands.autocomplete(name=spawner_name_autocomplete)
     async def remove_spawner(interaction: Interaction, name: str):
-        if not interaction.user.guild_permissions.manage_guild:
+        if not is_admin(interaction.user.id):
             await interaction.response.send_message(
                 "❌ Du hast keine Berechtigung dafür.",
                 ephemeral=True
@@ -471,7 +473,7 @@ def register_spawner_commands(client):
 
     @client.tree.command(name="spawnertext", description="Setzt den Header-Text über der Spawner-Preisliste")
     async def set_spawner_text(interaction: Interaction):
-        if not interaction.user.guild_permissions.manage_guild:
+        if not is_admin(interaction.user.id):
             await interaction.response.send_message(
                 "❌ Du hast keine Berechtigung dafür.",
                 ephemeral=True
@@ -556,7 +558,7 @@ def register_spawner_commands(client):
     @client.tree.command(name="spawnertrade-category", description="Setzt die Kategorie für Kauf-/Verkauf-Tickets")
     @app_commands.describe(category="Die Kategorie für Spawner-Trade-Tickets")
     async def set_spawner_trade_category(interaction: Interaction, category: discord.CategoryChannel):
-        if not interaction.user.guild_permissions.manage_guild:
+        if not is_admin(interaction.user.id):
             await interaction.response.send_message(
                 "❌ Du hast keine Berechtigung dafür.",
                 ephemeral=True
