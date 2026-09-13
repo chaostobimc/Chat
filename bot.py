@@ -5,8 +5,11 @@ A professional ticket management system with web dashboard.
 
 import os
 import io
+import sys
 import json
 import sqlite3
+import logging
+import traceback
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from contextlib import contextmanager
@@ -23,16 +26,37 @@ from discord.ext import tasks
 from dotenv import load_dotenv
 from fpdf import FPDF
 
-load_dotenv()
+# ==================== PATH SETUP ====================
+# Use absolute path based on this script's location so it works
+# regardless of the working directory (e.g., when started via pm2)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_DIR = os.path.join(BASE_DIR, "database")
+DB_PATH = os.path.join(DB_DIR, "tickets.db")
+
+# Ensure database directory exists
+os.makedirs(DB_DIR, exist_ok=True)
+
+# Load .env from the script's directory
+load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 from utils import is_admin
+
+# ==================== LOGGING ====================
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] [%(levelname)-8s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger('ticket_bot')
 
 
 # ==================== DATABASE ====================
 
 class Database:
-    def __init__(self, db_path: str = "database/tickets.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: str = None):
+        self.db_path = db_path or DB_PATH
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self.init_db()
     
     @contextmanager
@@ -1264,6 +1288,45 @@ class TicketBot(discord.Client):
         self.ready_guilds = set()
     
     async def setup_hook(self):
+        # Global error handler for all slash commands
+        @self.tree.error
+        async def on_command_error(interaction: Interaction, error: app_commands.AppCommandError):
+            cmd_name = interaction.command.name if interaction.command else 'unknown'
+            
+            # Log the full error
+            logger.error(f"Command '/{cmd_name}' error: {error}")
+            traceback.print_exception(type(error), error, error.__traceback__)
+            
+            # User-friendly error messages
+            if isinstance(error, app_commands.CommandInvokeError):
+                original = error.original
+                if isinstance(original, discord.NotFound):
+                    msg = "⚠️ Die Anfrage ist abgelaufen. Bitte versuche es nochmal."
+                elif isinstance(original, discord.Forbidden):
+                    msg = "❌ Der Bot hat keine Berechtigung dafür."
+                elif isinstance(original, discord.HTTPException):
+                    msg = f"⚠️ Discord-Fehler: {original}"
+                else:
+                    msg = f"❌ Ein Fehler ist aufgetreten. Bitte versuche es nochmal."
+            elif isinstance(error, app_commands.CheckFailure):
+                msg = "❌ Du hast keine Berechtigung für diesen Befehl."
+            elif isinstance(error, app_commands.MissingRequiredArgument):
+                msg = f"❌ Fehlender Parameter: `{error.param.name}`"
+            elif isinstance(error, app_commands.BadArgument):
+                msg = f"❌ Ungültige Eingabe: {error}"
+            else:
+                msg = "❌ Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es nochmal."
+            
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(msg, ephemeral=True)
+                else:
+                    await interaction.response.send_message(msg, ephemeral=True)
+            except discord.NotFound:
+                pass  # Interaction already expired
+            except Exception:
+                pass  # Can't send error message
+        
         await self.tree.sync()
         
         for guild in self.guilds:
@@ -1322,55 +1385,69 @@ class TicketBot(discord.Client):
         """Process pending panel send requests from the dashboard."""
         try:
             pending = self.db.get_pending_sends()
-            for item in pending:
-                try:
-                    guild = self.get_guild(int(item['guild_id']))
-                    if not guild:
-                        self.db.mark_send_processed(item['id'], 'error', 'Guild nicht gefunden')
-                        continue
-
-                    channel = guild.get_channel(int(item['channel_id']))
-                    if not channel:
-                        self.db.mark_send_processed(item['id'], 'error', 'Kanal nicht gefunden')
-                        continue
-
-                    # Build panel embed
-                    embed = discord.Embed(
-                        title=f"🎫 {item['title']}",
-                        description=item['description'],
-                        color=discord.Color.blue()
-                    )
-
-                    buttons = self.db.get_panel_buttons(item['panel_id'])
-                    if buttons:
-                        button_text = "\n".join([
-                            f"• **{b['label']}**" + (f" - {b['description']}" if b['description'] else "")
-                            for b in buttons
-                        ])
-                        embed.description = f"{item['description']}\n\n{button_text}"
-
-                    if item.get('image_url'):
-                        embed.set_image(url=item['image_url'])
-
-                    embed.set_footer(text="Klicke auf einen Button um ein Ticket zu erstellen.")
-
-                    # Create view with buttons
-                    view = TicketPanelView(self.db, str(guild.id), item['panel_id'])
-                    await view.setup()
-
-                    msg = await channel.send(embed=embed, view=view)
-
-                    # Update panel with message info
-                    self.db.update_panel(item['panel_id'], message_id=str(msg.id), channel_id=str(channel.id))
-                    self.db.mark_send_processed(item['id'], 'done')
-                    print(f"✅ Panel '{item['title']}' sent to #{channel.name} in {guild.name}")
-
-                except Exception as e:
-                    self.db.mark_send_processed(item['id'], 'error', str(e))
-                    print(f"❌ Error sending panel {item['id']}: {e}")
-
         except Exception as e:
-            print(f"❌ Error in send queue loop: {e}")
+            if not hasattr(self, '_queue_error_logged') or not self._queue_error_logged:
+                logger.error(f"Send queue: DB nicht erreichbar - {e}")
+                self._queue_error_logged = True
+            return
+        
+        # Reset error flag if DB is accessible
+        if hasattr(self, '_queue_error_logged') and self._queue_error_logged:
+            logger.info("Send queue: DB wieder erreichbar ✅")
+            self._queue_error_logged = False
+
+        if not pending:
+            return
+
+        for item in pending:
+            try:
+                guild = self.get_guild(int(item['guild_id']))
+                if not guild:
+                    self.db.mark_send_processed(item['id'], 'error', 'Guild nicht gefunden')
+                    continue
+
+                channel = guild.get_channel(int(item['channel_id']))
+                if not channel:
+                    self.db.mark_send_processed(item['id'], 'error', 'Kanal nicht gefunden')
+                    continue
+
+                # Build panel embed
+                embed = discord.Embed(
+                    title=f"🎫 {item['title']}",
+                    description=item['description'],
+                    color=discord.Color.blue()
+                )
+
+                buttons = self.db.get_panel_buttons(item['panel_id'])
+                if buttons:
+                    button_text = "\n".join([
+                        f"• **{b['label']}**" + (f" - {b['description']}" if b['description'] else "")
+                        for b in buttons
+                    ])
+                    embed.description = f"{item['description']}\n\n{button_text}"
+
+                if item.get('image_url'):
+                    embed.set_image(url=item['image_url'])
+
+                embed.set_footer(text="Klicke auf einen Button um ein Ticket zu erstellen.")
+
+                # Create view with buttons
+                view = TicketPanelView(self.db, str(guild.id), item['panel_id'])
+                await view.setup()
+
+                msg = await channel.send(embed=embed, view=view)
+
+                # Update panel with message info
+                self.db.update_panel(item['panel_id'], message_id=str(msg.id), channel_id=str(channel.id))
+                self.db.mark_send_processed(item['id'], 'done')
+                logger.info(f"Panel '{item['title']}' sent to #{channel.name} in {guild.name}")
+
+            except Exception as e:
+                try:
+                    self.db.mark_send_processed(item['id'], 'error', str(e))
+                except Exception:
+                    pass
+                logger.error(f"Error sending panel {item.get('id', '?')}: {e}")
 
     @process_send_queue.before_loop
     async def before_send_queue(self):
