@@ -221,29 +221,36 @@ def build_spawner_embed(db, guild_id: str) -> discord.Embed:
             inline=False
         )
     else:
-        # Build the price list
-        lines = []
-        for i, sp in enumerate(spawners, 1):
-            lines.append(f"**{i}.** {sp['name']} — `{sp['price']}`")
+        # Build the price list — one entry per spawner
+        separator = "────────────────────"
+        entries = []
+        for sp in spawners:
+            lines = [separator, f"*{sp['name']}*", ""]
+            lines.append(f"- Ankaufspreis: `{sp['price']}`")
+            sell_price = sp.get('sell_price', '')
+            if sell_price:
+                lines.append(f"- Verkaufspreis: `{sell_price}`")
+            lines.append(separator)
+            entries.append("\n".join(lines))
 
-        # Split into chunks if too long (Discord limit is 1024 per field)
+        # Discord embed has a 6000 char total limit and 1024 per field.
+        # Group entries into fields that fit.
         chunk = ""
         field_count = 0
-        for line in lines:
-            if len(chunk) + len(line) + 1 > 1024:
+        for entry in entries:
+            if chunk and len(chunk) + len(entry) + 2 > 1024:
                 field_count += 1
                 embed.add_field(
-                    name="Spawner" if field_count == 1 else f"Spawner (Fortsetzung {field_count})",
+                    name="\u200b" if field_count > 1 else "\u200b",
                     value=chunk.strip(),
                     inline=False
                 )
                 chunk = ""
-            chunk += line + "\n"
+            chunk += entry + "\n"
 
         if chunk:
-            field_count += 1
             embed.add_field(
-                name="Spawner" if field_count == 1 else f"Spawner (Fortsetzung {field_count})",
+                name="\u200b",
                 value=chunk.strip(),
                 inline=False
             )
@@ -306,9 +313,10 @@ def register_spawner_commands(client):
     @client.tree.command(name="spawner", description="Fügt einen Spawner zur Preisliste hinzu")
     @app_commands.describe(
         name="Name des Spawners",
-        preis="Preis des Spawners (z.B. 500000 oder 500k)"
+        preis="Ankaufspreis des Spawners (z.B. 13,0M)",
+        verkaufspreis="Verkaufspreis des Spawners (optional, z.B. 14,0M)"
     )
-    async def add_spawner(interaction: Interaction, name: str, preis: str):
+    async def add_spawner(interaction: Interaction, name: str, preis: str, verkaufspreis: str = ""):
         await interaction.response.defer(ephemeral=True)
 
         if not is_admin(interaction.user.id):
@@ -330,14 +338,18 @@ def register_spawner_commands(client):
             )
             return
 
-        client.db.add_spawner(guild_id, name, preis)
+        client.db.add_spawner(guild_id, name, preis, verkaufspreis)
 
         # Update sent message if exists
         schedule_update_spawner_message(client.db, interaction.guild)
 
+        description = f"**Name:** {name}\n**Ankaufspreis:** `{preis}`"
+        if verkaufspreis:
+            description += f"\n**Verkaufspreis:** `{verkaufspreis}`"
+
         embed = discord.Embed(
             title="✅ Spawner hinzugefügt",
-            description=f"**Name:** {name}\n**Preis:** `{preis}`",
+            description=description,
             color=discord.Color.green()
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
@@ -381,10 +393,11 @@ def register_spawner_commands(client):
     @client.tree.command(name="updateprice", description="Aktualisiert den Preis eines Spawners")
     @app_commands.describe(
         name="Name des Spawners",
-        neuer_preis="Der neue Preis"
+        neuer_preis="Der neue Ankaufspreis",
+        verkaufspreis="Der neue Verkaufspreis (optional, leer lassen um nicht zu ändern)"
     )
     @app_commands.autocomplete(name=spawner_name_autocomplete)
-    async def update_price(interaction: Interaction, name: str, neuer_preis: str):
+    async def update_price(interaction: Interaction, name: str, neuer_preis: str, verkaufspreis: str = None):
         await interaction.response.defer(ephemeral=True)
 
         if not is_admin(interaction.user.id):
@@ -407,10 +420,28 @@ def register_spawner_commands(client):
             return
 
         old_price = existing['price']
+        old_sell_price = existing.get('sell_price', '')
+
+        # Update buy price
         client.db.update_spawner_price(guild_id, name, neuer_preis)
+
+        # Update sell price if provided
+        if verkaufspreis is not None:
+            client.db.update_spawner_sell_price(guild_id, name, verkaufspreis)
+            new_sell_price = verkaufspreis
+        else:
+            new_sell_price = old_sell_price
 
         # Update sent message
         schedule_update_spawner_message(client.db, interaction.guild)
+
+        # Build description for confirmation
+        description = (
+            f"**Spawner:** {name}\n"
+            f"**Ankaufspreis:** ~~`{old_price}`~~ → `{neuer_preis}`"
+        )
+        if verkaufspreis is not None:
+            description += f"\n**Verkaufspreis:** ~~`{old_sell_price or '—'}`~~ → `{verkaufspreis}`"
 
         # Send price update notification to the spawner channel
         channel_id = client.db.get_setting('spawner_list_channel_id', '')
@@ -420,12 +451,7 @@ def register_spawner_commands(client):
                 if spawner_channel:
                     update_embed = discord.Embed(
                         title="🔄 Preis aktualisiert!",
-                        description=(
-                            f"**Spawner:** {name}\n"
-                            f"**Alter Preis:** ~~`{old_price}`~~\n"
-                            f"**Neuer Preis:** `{neuer_preis}`\n"
-                            f"**Geändert von:** {interaction.user.mention}"
-                        ),
+                        description=description + f"\n**Geändert von:** {interaction.user.mention}",
                         color=discord.Color.gold()
                     )
                     update_embed.timestamp = datetime.now()
@@ -435,11 +461,7 @@ def register_spawner_commands(client):
 
         embed = discord.Embed(
             title="✅ Preis aktualisiert",
-            description=(
-                f"**Spawner:** {name}\n"
-                f"**Alter Preis:** ~~`{old_price}`~~\n"
-                f"**Neuer Preis:** `{neuer_preis}`"
-            ),
+            description=description,
             color=discord.Color.green()
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
@@ -720,7 +742,11 @@ def register_spawner_commands(client):
 
         lines = []
         for i, sp in enumerate(spawners, 1):
-            lines.append(f"**{i}.** {sp['name']} — `{sp['price']}`")
+            line = f"**{i}.** {sp['name']} — Ankauf: `{sp['price']}`"
+            sell_price = sp.get('sell_price', '')
+            if sell_price:
+                line += f" | Verkauf: `{sell_price}`"
+            lines.append(line)
 
         text = "\n".join(lines[:25])
         if len(spawners) > 25:

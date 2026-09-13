@@ -211,9 +211,16 @@ class Database:
                     guild_id TEXT NOT NULL,
                     name TEXT NOT NULL,
                     price TEXT NOT NULL,
+                    sell_price TEXT DEFAULT '',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # Migration: add sell_price column if missing (existing databases)
+            cursor.execute("PRAGMA table_info(spawners)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if 'sell_price' not in columns:
+                cursor.execute("ALTER TABLE spawners ADD COLUMN sell_price TEXT DEFAULT ''")
 
             conn.commit()
     
@@ -537,13 +544,13 @@ class Database:
 
     # ==================== NEW: SPAWNER PRICE LIST ====================
 
-    def add_spawner(self, guild_id: str, name: str, price: str) -> int:
+    def add_spawner(self, guild_id: str, name: str, price: str, sell_price: str = '') -> int:
         """Add a spawner to the price list."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO spawners (guild_id, name, price) VALUES (?, ?, ?)",
-                (guild_id, name, price)
+                "INSERT INTO spawners (guild_id, name, price, sell_price) VALUES (?, ?, ?, ?)",
+                (guild_id, name, price, sell_price)
             )
             return cursor.lastrowid
 
@@ -572,12 +579,30 @@ class Database:
             return dict(row) if row else None
 
     def update_spawner_price(self, guild_id: str, name: str, new_price: str):
-        """Update the price of a spawner."""
+        """Update the buy price of a spawner."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "UPDATE spawners SET price = ? WHERE guild_id = ? AND LOWER(name) = LOWER(?)",
                 (new_price, guild_id, name)
+            )
+
+    def update_spawner_sell_price(self, guild_id: str, name: str, new_sell_price: str):
+        """Update the sell price of a spawner."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE spawners SET sell_price = ? WHERE guild_id = ? AND LOWER(name) = LOWER(?)",
+                (new_sell_price, guild_id, name)
+            )
+
+    def update_spawner_prices(self, guild_id: str, name: str, new_price: str, new_sell_price: str):
+        """Update both buy and sell price of a spawner."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE spawners SET price = ?, sell_price = ? WHERE guild_id = ? AND LOWER(name) = LOWER(?)",
+                (new_price, new_sell_price, guild_id, name)
             )
 
     def remove_spawner(self, guild_id: str, name: str):
