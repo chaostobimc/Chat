@@ -710,7 +710,7 @@ def parse_role_mentions(roles_string: str, guild: discord.Guild) -> List[discord
     return resolved
 
 
-async def generate_ticket_pdf(channel: discord.TextChannel, ticket_data: Dict, closed_by: discord.Member, reason: str) -> io.BytesIO:
+async def generate_ticket_pdf(channel_name: str, ticket_data: Dict, closed_by: discord.Member, reason: str, messages: list) -> io.BytesIO:
     """Generate a beautiful PDF transcript of a ticket channel."""
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -749,7 +749,7 @@ async def generate_ticket_pdf(channel: discord.TextChannel, ticket_data: Dict, c
     pdf.set_text_color(*light_text)
     pdf.set_xy(15, pdf.get_y() + 5)
     pdf.cell(90, 6, f'User ID: {ticket_data.get("user_id", "Unknown")}', ln=False)
-    pdf.cell(90, 6, f'Channel: #{channel.name}', ln=True)
+    pdf.cell(90, 6, f'Channel: #{channel_name}', ln=True)
     
     pdf.set_font('Helvetica', '', 10)
     pdf.set_text_color(*gray_text)
@@ -772,12 +772,7 @@ async def generate_ticket_pdf(channel: discord.TextChannel, ticket_data: Dict, c
     pdf.cell(0, 10, 'Chat History', ln=True)
     pdf.ln(2)
     
-    # Fetch messages
-    messages = []
-    async for msg in channel.history(limit=1000, oldest_first=True):
-        messages.append(msg)
-    
-    # Render messages
+    # Render messages (already fetched)
     pdf.set_font('Helvetica', '', 10)
     for msg in messages:
         # Check if we need a new page
@@ -828,23 +823,23 @@ async def generate_ticket_pdf(channel: discord.TextChannel, ticket_data: Dict, c
     return pdf_bytes
 
 
-async def send_pdf_to_log_channel(db, channel, ticket, closed_by, reason):
+async def send_pdf_to_log_channel(db, guild, channel_name: str, ticket, closed_by, reason, messages: list):
     """Generate PDF and send to log channel (designed to run as background task)."""
     try:
-        pdf_bytes = await generate_ticket_pdf(channel, ticket, closed_by, reason)
+        pdf_bytes = await generate_ticket_pdf(channel_name, ticket, closed_by, reason, messages)
         pdf_filename = f"transcript_{ticket.get('ticket_id', 'unknown')}.pdf"
         pdf_file = discord.File(pdf_bytes, filename=pdf_filename)
         
         log_channel_id = db.get_setting('log_channel_id', '')
         if log_channel_id:
-            log_channel = channel.guild.get_channel(int(log_channel_id))
+            log_channel = guild.get_channel(int(log_channel_id))
             if log_channel:
                 log_embed = discord.Embed(
                     title="📋 Ticket Transkript",
                     description=(
                         f"**Ticket:** `{ticket.get('ticket_id', 'Unknown')}`\n"
                         f"**Benutzer:** <@{ticket.get('user_id', 'Unknown')}>\n"
-                        f"**Kanal:** #{channel.name}\n"
+                        f"**Kanal:** #{channel_name}\n"
                         f"**Geschlossen von:** {closed_by.mention}\n"
                         f"**Grund:** {reason}"
                     ),
@@ -854,6 +849,10 @@ async def send_pdf_to_log_channel(db, channel, ticket, closed_by, reason):
                 log_embed.set_footer(text=f"Geschlossen am {datetime.now().strftime('%d.%m.%Y um %H:%M')}")
                 await log_channel.send(embed=log_embed, file=pdf_file)
                 logger.info(f"PDF transcript sent for {ticket.get('ticket_id')}")
+            else:
+                logger.warning(f"Log channel {log_channel_id} not found")
+        else:
+            logger.warning("No log_channel_id configured")
     except Exception as e:
         logger.error(f"Error generating/sending PDF: {e}")
 
@@ -1254,9 +1253,11 @@ class CloseTicketModal(Modal, title="Ticket schließen"):
         # Close ticket in database
         client.db.close_ticket(str(channel.id), str(interaction.user.id))
         
-        # Generate transcript text for DB
+        # Generate transcript text for DB and collect messages for PDF
         transcript_content = []
+        messages = []
         async for msg in channel.history(limit=500, oldest_first=True):
+            messages.append(msg)
             timestamp = msg.created_at.strftime('%d.%m.%Y %H:%M')
             content = msg.content or '[Kein Text]'
             transcript_content.append(f"[{timestamp}] {msg.author}: {content}")
@@ -1282,7 +1283,10 @@ class CloseTicketModal(Modal, title="Ticket schließen"):
             pass
         
         # Generate PDF transcript in background (non-blocking)
-        asyncio.create_task(send_pdf_to_log_channel(client.db, channel, ticket, interaction.user, reason))
+        # Pass already-fetched messages so PDF generation doesn't depend on channel still existing
+        asyncio.create_task(send_pdf_to_log_channel(
+            client.db, interaction.guild, channel.name, ticket, interaction.user, reason, messages
+        ))
         
         # Confirm to user
         await interaction.followup.send(
@@ -1694,9 +1698,11 @@ async def close_ticket(interaction: Interaction, reason: str = None):
     # Close ticket in database
     client.db.close_ticket(str(channel.id), str(user.id))
     
-    # Save transcript
+    # Save transcript and collect messages for PDF
     transcript_content = []
+    messages = []
     async for msg in channel.history(limit=500, oldest_first=True):
+        messages.append(msg)
         timestamp = msg.created_at.strftime('%d.%m.%Y %H:%M')
         content = msg.content or '[Kein Text]'
         transcript_content.append(f"[{timestamp}] {msg.author}: {content}")
@@ -1722,7 +1728,10 @@ async def close_ticket(interaction: Interaction, reason: str = None):
         pass
     
     # Generate and send PDF to log channel (background, non-blocking)
-    asyncio.create_task(send_pdf_to_log_channel(client.db, channel, ticket, user, reason))
+    # Pass already-fetched messages so PDF generation doesn't depend on channel still existing
+    asyncio.create_task(send_pdf_to_log_channel(
+        client.db, interaction.guild, channel.name, ticket, user, reason, messages
+    ))
     
     await interaction.followup.send(
         "✅ Ticket geschlossen. Kanal wird in 5 Sekunden gelöscht.",
