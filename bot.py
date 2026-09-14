@@ -1214,6 +1214,20 @@ class TicketActionView(View):
         )
 
 
+async def _delete_channel_after_delay(channel, user, reason):
+    """Delete channel after 5 seconds (runs as background task)."""
+    await asyncio.sleep(5)
+    try:
+        await channel.delete(reason=f"Ticket closed by {user}: {reason}")
+        logger.info(f"Channel {channel.name} deleted successfully")
+    except discord.NotFound:
+        logger.warning(f"Channel {channel.name} already deleted")
+    except discord.Forbidden:
+        logger.error(f"No permission to delete channel {channel.name}")
+    except Exception as e:
+        logger.error(f"Error deleting ticket channel {channel.name}: {e}")
+
+
 class CloseTicketModal(Modal, title="Ticket schließen"):
     def __init__(self, channel_id: str, user_id: str):
         super().__init__(timeout=300)
@@ -1282,26 +1296,17 @@ class CloseTicketModal(Modal, title="Ticket schließen"):
         except Exception:
             pass
         
-        # Generate PDF transcript in background (non-blocking)
-        # Pass already-fetched messages so PDF generation doesn't depend on channel still existing
-        asyncio.create_task(send_pdf_to_log_channel(
-            client.db, interaction.guild, channel.name, ticket, interaction.user, reason, messages
-        ))
-        
         # Confirm to user
         await interaction.followup.send(
-            "✅ Ticket wurde geschlossen. Transkript wurde erstellt und der Kanal wird gleich gelöscht.",
+            "✅ Ticket wurde geschlossen. Transkript wird erstellt und der Kanal wird in 5 Sekunden gelöscht.",
             ephemeral=True
         )
         
-        # Wait 5 seconds then delete the channel
-        import asyncio
-        await asyncio.sleep(5)
-        
-        try:
-            await channel.delete(reason=f"Ticket closed by {interaction.user}: {reason}")
-        except Exception as e:
-            print(f"❌ Error deleting ticket channel: {e}")
+        # Delete channel and generate PDF in background (non-blocking)
+        asyncio.create_task(_delete_channel_after_delay(channel, interaction.user, reason))
+        asyncio.create_task(send_pdf_to_log_channel(
+            client.db, interaction.guild, channel.name, ticket, interaction.user, reason, messages
+        ))
 
 
 # ==================== BOT CLASS ====================
@@ -1738,13 +1743,8 @@ async def close_ticket(interaction: Interaction, reason: str = None):
         ephemeral=True
     )
     
-    # Delete channel after delay
-    import asyncio
-    await asyncio.sleep(5)
-    try:
-        await channel.delete(reason=f"Ticket closed by {user}: {reason}")
-    except Exception as e:
-        print(f"❌ Error deleting channel: {e}")
+    # Delete channel in background (non-blocking)
+    asyncio.create_task(_delete_channel_after_delay(channel, user, reason))
 
 
 @client.tree.command(name="ticket-stats", description="Zeigt Ticket-Statistiken")
