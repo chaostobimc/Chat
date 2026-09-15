@@ -40,7 +40,7 @@ os.makedirs(DB_DIR, exist_ok=True)
 # Load .env from the script's directory
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
-from utils import is_admin
+from utils import is_admin, has_support_role, get_support_role_ids
 
 # ==================== LOGGING ====================
 logging.basicConfig(
@@ -946,6 +946,15 @@ class TicketButton(Button):
                 read_messages=True, send_messages=True
             )
         
+        # Add global support roles from .env
+        global_support_role_ids = get_support_role_ids()
+        for role_id in global_support_role_ids:
+            role = guild.get_role(int(role_id))
+            if role:
+                overwrites[role] = PermissionOverwrite(
+                    read_messages=True, send_messages=True
+                )
+        
         channel_name = f"{button_data['label'].lower().replace(' ', '-')}-{ticket_count:04d}"
         
         try:
@@ -1130,22 +1139,37 @@ class TicketActionView(View):
     async def claim_ticket(self, interaction: Interaction, btn: Button):
         await interaction.response.defer(ephemeral=True)
         
-        # Check if user has permission (manage_guild or has support role)
+        # Check if user has permission (manage_guild, global support role, or button-specific support role)
         if not interaction.user.guild_permissions.manage_guild:
-            ticket = client.db.get_ticket_by_channel(str(interaction.channel.id))
-            if ticket:
-                button_data = client.db.get_button_by_id(ticket.get('button_id'))
-                if button_data:
-                    effective_roles = client.db.get_effective_support_roles(button_data)
-                    support_roles = parse_role_mentions(effective_roles, interaction.guild)
-                    user_role_ids = [r.id for r in interaction.user.roles]
-                    has_support_role = any(r.id in user_role_ids for r in support_roles)
-                    if not has_support_role:
+            # Check global support roles from .env
+            if not has_support_role(interaction.user):
+                # Check button-specific support roles
+                ticket = client.db.get_ticket_by_channel(str(interaction.channel.id))
+                if ticket:
+                    button_data = client.db.get_button_by_id(ticket.get('button_id'))
+                    if button_data:
+                        effective_roles = client.db.get_effective_support_roles(button_data)
+                        support_roles = parse_role_mentions(effective_roles, interaction.guild)
+                        user_role_ids = [r.id for r in interaction.user.roles]
+                        has_button_support_role = any(r.id in user_role_ids for r in support_roles)
+                        if not has_button_support_role:
+                            await interaction.followup.send(
+                                "❌ Du hast keine Berechtigung dieses Ticket zu claimen.",
+                                ephemeral=True
+                            )
+                            return
+                    else:
                         await interaction.followup.send(
                             "❌ Du hast keine Berechtigung dieses Ticket zu claimen.",
                             ephemeral=True
                         )
                         return
+                else:
+                    await interaction.followup.send(
+                        "❌ Du hast keine Berechtigung dieses Ticket zu claimen.",
+                        ephemeral=True
+                    )
+                    return
         
         # Update the button
         btn.label = f'Claimed by {interaction.user.display_name}'
@@ -1687,7 +1711,11 @@ async def close_ticket(interaction: Interaction, reason: str = None):
         return
     
     user = interaction.user
-    can_close = user.guild_permissions.manage_guild or str(user.id) == ticket['user_id']
+    can_close = (
+        user.guild_permissions.manage_guild 
+        or str(user.id) == ticket['user_id']
+        or has_support_role(user)
+    )
     
     if not can_close:
         await interaction.response.send_message(

@@ -11,7 +11,7 @@ from discord.ui import View, Button, button
 from datetime import datetime
 from typing import Optional, Dict, List
 
-from utils import is_admin
+from utils import is_admin, get_support_role_ids
 
 logger = logging.getLogger('ticket_bot')
 
@@ -102,6 +102,15 @@ class SpawnerTradeModal(discord.ui.Modal):
         if default_roles:
             support_roles = parse_role_mentions(default_roles, guild)
             for role in support_roles:
+                overwrites[role] = PermissionOverwrite(
+                    read_messages=True, send_messages=True
+                )
+
+        # Add global support roles from .env
+        global_support_role_ids = get_support_role_ids()
+        for role_id in global_support_role_ids:
+            role = guild.get_role(int(role_id))
+            if role:
                 overwrites[role] = PermissionOverwrite(
                     read_messages=True, send_messages=True
                 )
